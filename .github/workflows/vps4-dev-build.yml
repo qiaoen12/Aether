@@ -1,0 +1,141 @@
+name: Build vps4 dev artifact
+
+on:
+  push:
+    branches:
+      - feature/per-ip-concurrency-v0.7.7
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/**"
+      - "apps/**"
+      - "frontend/**"
+      - "Dockerfile.app"
+      - "docker-compose.yml"
+      - ".github/workflows/vps4-dev-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: vps4-dev-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: x86_64-unknown-linux-musl
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: vps4-dev-linux-amd64
+          workspaces: . -> target
+
+      - name: Install cross
+        uses: taiki-e/install-action@cross
+
+      - name: Build gateway
+        env:
+          AETHER_VERSION: vps4-dev-${{ github.sha }}
+          AETHER_BUILD_TYPE: dev
+          CARGO_TERM_COLOR: always
+        run: |
+          cross build --release --locked -p aether-gateway --target x86_64-unknown-linux-musl
+
+      - name: Package vps4 artifact
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          short_sha="${GITHUB_SHA::12}"
+          artifact="aether-vps4-dev-linux-amd64-${short_sha}.tar.gz"
+
+          mkdir -p dist
+          cp target/x86_64-unknown-linux-musl/release/aether-gateway dist/aether-gateway-amd64
+          chmod 0755 dist/aether-gateway-amd64
+          rm -rf dist/frontend
+          cp -R frontend/dist dist/frontend
+          printf '%s\n' "${GITHUB_SHA}" > dist/source-commit.txt
+
+          tar -czf "${artifact}" \
+            dist \
+            Dockerfile.app \
+            docker-compose.yml \
+            .env.example \
+            generate_keys.sh
+          sha256sum "${artifact}" > "${artifact}.sha256"
+
+          echo "artifact=${artifact}" >> "${GITHUB_OUTPUT}"
+          echo "tag=vps4-per-ip-${short_sha}" >> "${GITHUB_OUTPUT}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push vps4 image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.app
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/aether:${{ steps.package.outputs.tag }}
+            ghcr.io/${{ github.repository_owner }}/aether:vps4-per-ip
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.package.outputs.tag }}
+
+      - name: Create release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.package.outputs.tag }}
+          ARTIFACT: ${{ steps.package.outputs.artifact }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          title="vps4 per-IP concurrency dev ${GITHUB_SHA::12}"
+          notes="Dev artifact for vps4 validation from ${GITHUB_SHA}."
+
+          if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" "${ARTIFACT}" "${ARTIFACT}.sha256" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --clobber
+          else
+            gh release create "${TAG}" "${ARTIFACT}" "${ARTIFACT}.sha256" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --target "${GITHUB_SHA}" \
+              --prerelease \
+              --title "${title}" \
+              --notes "${notes}"
+          fi
