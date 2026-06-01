@@ -52,7 +52,7 @@ use crate::handlers::shared::{
 };
 use crate::headers::{
     extract_or_generate_trace_id, request_origin_from_headers_and_remote_addr,
-    should_skip_request_header, RequestBodyNormalizationError,
+    should_skip_request_header, RequestBodyNormalizationError, RequestOrigin,
 };
 use crate::router::RequestAdmissionError;
 use crate::scheduler::candidate::{
@@ -412,6 +412,23 @@ fn remote_ip_allowed(allowed_ips: Option<&serde_json::Value>, remote_ip: std::ne
 
 fn api_key_remote_ip_allowed(ip_rules: Option<&[String]>, remote_ip: std::net::IpAddr) -> bool {
     ip_rules_allow(ip_rules, remote_ip)
+}
+
+fn effective_client_ip(
+    request_origin: &RequestOrigin,
+    remote_addr: &std::net::SocketAddr,
+) -> std::net::IpAddr {
+    request_origin
+        .client_ip
+        .as_deref()
+        .and_then(|value| value.trim().parse::<std::net::IpAddr>().ok())
+        .unwrap_or_else(|| remote_addr.ip())
+}
+
+fn positive_api_key_limit(value: Option<i32>) -> Option<usize> {
+    value
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|value| *value > 0)
 }
 
 async fn maybe_promote_management_token_admin_principal(
@@ -1088,12 +1105,9 @@ pub(crate) async fn proxy_request(
     let (mut parts, body) = request.into_parts();
     let redaction_slot = crate::privacy::RedactionSessionSlot::default();
     parts.extensions.insert(redaction_slot.clone());
-    parts
-        .extensions
-        .insert(request_origin_from_headers_and_remote_addr(
-            &parts.headers,
-            &remote_addr,
-        ));
+    let request_origin = request_origin_from_headers_and_remote_addr(&parts.headers, &remote_addr);
+    let client_ip = effective_client_ip(&request_origin, &remote_addr);
+    parts.extensions.insert(request_origin);
     let trace_id = extract_or_generate_trace_id(&parts.headers);
     state.clear_local_execution_runtime_miss_diagnostic(&trace_id);
     if request_hits_execution_loop_guard(&parts) {
@@ -1155,9 +1169,9 @@ pub(crate) async fn proxy_request(
         .as_ref()
         .and_then(|decision| decision.auth_context.as_ref())
     {
-        if !api_key_remote_ip_allowed(auth_context.ip_rules.as_deref(), remote_addr.ip()) {
+        if !api_key_remote_ip_allowed(auth_context.ip_rules.as_deref(), client_ip) {
             let rejection = crate::control::GatewayLocalAuthRejection::IpNotAllowed {
-                remote_ip: remote_addr.ip().to_string(),
+                remote_ip: client_ip.to_string(),
             };
             let response = build_local_auth_rejection_response(
                 &trace_id,
@@ -1173,6 +1187,53 @@ pub(crate) async fn proxy_request(
                 &started_at,
                 request_permit.take(),
             ));
+        }
+        if let Some(limit) = positive_api_key_limit(auth_context.api_key_per_ip_concurrency_limit) {
+            match state.try_acquire_api_key_ip_concurrency_permit(
+                &auth_context.api_key_id,
+                &client_ip.to_string(),
+                limit,
+            ) {
+                Ok(Some(permit)) => {
+                    request_permit = Some(match request_permit.take() {
+                        Some(existing) => existing.with_local(permit),
+                        None => permit.into(),
+                    });
+                }
+                Ok(None) => {}
+                Err(aether_runtime::ConcurrencyError::Saturated { gate, limit }) => {
+                    warn!(
+                        event_name = "frontdoor_api_key_ip_concurrency_limited",
+                        log_type = "ops",
+                        trace_id = %trace_id,
+                        api_key_id = auth_context.api_key_id.as_str(),
+                        client_ip = %client_ip,
+                        gate = gate,
+                        limit,
+                        "gateway rejected API key request because client IP concurrency is saturated"
+                    );
+                    let response = build_local_overloaded_response(
+                        &trace_id,
+                        request_context.control_decision.as_ref(),
+                        gate,
+                        limit,
+                    )?;
+                    return Ok(finalize_gateway_response_with_context(
+                        &state,
+                        response,
+                        &remote_addr,
+                        &request_context,
+                        EXECUTION_PATH_LOCAL_API_KEY_CONCURRENCY_LIMITED,
+                        &started_at,
+                        request_permit.take(),
+                    ));
+                }
+                Err(aether_runtime::ConcurrencyError::Closed { gate }) => {
+                    return Err(GatewayError::Internal(format!(
+                        "api key ip concurrency gate {gate} is closed"
+                    )));
+                }
+            }
         }
     }
     let request_context_ms = request_context_started_at.elapsed().as_millis() as u64;

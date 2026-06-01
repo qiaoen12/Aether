@@ -101,6 +101,12 @@ fn env_duration_ms(key: &str, default_ms: u64, min_ms: u64, max_ms: u64) -> Dura
 }
 
 #[derive(Debug, Clone)]
+pub(crate) struct ApiKeyIpConcurrencyGateEntry {
+    pub(crate) limit: usize,
+    pub(crate) gate: Arc<ConcurrencyGate>,
+}
+
+#[derive(Debug, Clone)]
 pub struct AppState {
     #[cfg(test)]
     pub(crate) execution_runtime_override_base_url: Option<String>,
@@ -130,6 +136,8 @@ pub struct AppState {
     pub(crate) provider_transport_snapshot_cache:
         Arc<StdMutex<HashMap<ProviderTransportSnapshotCacheKey, CachedProviderTransportSnapshot>>>,
     pub(crate) provider_key_rpm_resets: Arc<StdMutex<HashMap<String, u64>>>,
+    pub(crate) api_key_ip_concurrency_gates:
+        Arc<StdMutex<HashMap<String, ApiKeyIpConcurrencyGateEntry>>>,
     pub(crate) local_execution_runtime_miss_diagnostics:
         Arc<StdMutex<HashMap<String, LocalExecutionRuntimeMissDiagnostic>>>,
     pub(crate) admin_monitoring_error_stats_reset_at: Arc<StdMutex<Option<u64>>>,

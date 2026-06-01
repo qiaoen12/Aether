@@ -125,6 +125,7 @@ pub(super) fn sample_auth_snapshot(api_key_id: &str) -> GatewayAuthApiKeySnapsho
         api_key_is_standalone: false,
         api_key_rate_limit: None,
         api_key_concurrent_limit: None,
+        api_key_per_ip_concurrency_limit: None,
         api_key_expires_at_unix_secs: None,
         api_key_allowed_providers: None,
         api_key_allowed_api_formats: None,

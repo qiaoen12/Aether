@@ -12,8 +12,8 @@ use aether_data::repository::proxy_nodes::{
 };
 use aether_http::{build_http_client, HttpClientConfig};
 use aether_runtime::{
-    service_up_sample, AdmissionPermit, ConcurrencyGate, ConcurrencySnapshot, MetricKind,
-    MetricLabel, MetricSample,
+    service_up_sample, AdmissionPermit, ConcurrencyError, ConcurrencyGate, ConcurrencyPermit,
+    ConcurrencySnapshot, MetricKind, MetricLabel, MetricSample,
 };
 use aether_runtime_state::{
     MemoryRuntimeStateConfig, RuntimeQueueStore, RuntimeSemaphore, RuntimeSemaphoreError,
@@ -22,7 +22,8 @@ use aether_runtime_state::{
 use aether_scheduler_core::PROVIDER_KEY_RPM_WINDOW_SECS;
 
 use super::{
-    AppState, FrontdoorCorsConfig, FrontdoorRuntimeGuardConfig, LocalExecutionRuntimeMissDiagnostic,
+    app::ApiKeyIpConcurrencyGateEntry, AppState, FrontdoorCorsConfig, FrontdoorRuntimeGuardConfig,
+    LocalExecutionRuntimeMissDiagnostic,
 };
 
 use super::super::async_task::{
@@ -254,6 +255,7 @@ impl AppState {
             ),
             provider_transport_snapshot_cache: Arc::new(StdMutex::new(HashMap::new())),
             provider_key_rpm_resets: Arc::new(StdMutex::new(HashMap::new())),
+            api_key_ip_concurrency_gates: Arc::new(StdMutex::new(HashMap::new())),
             local_execution_runtime_miss_diagnostics: Arc::new(StdMutex::new(HashMap::new())),
             admin_monitoring_error_stats_reset_at: Arc::new(StdMutex::new(None)),
             provider_delete_tasks: Arc::new(StdMutex::new(HashMap::new())),
@@ -995,6 +997,43 @@ impl AppState {
         Ok(AdmissionPermit::from_parts(local, distributed))
     }
 
+    pub(crate) fn try_acquire_api_key_ip_concurrency_permit(
+        &self,
+        api_key_id: &str,
+        client_ip: &str,
+        limit: usize,
+    ) -> Result<Option<ConcurrencyPermit>, ConcurrencyError> {
+        let api_key_id = api_key_id.trim();
+        let client_ip = client_ip.trim();
+        if api_key_id.is_empty() || client_ip.is_empty() || limit == 0 {
+            return Ok(None);
+        }
+
+        let gate_key = format!("auth_api_key_ip:{api_key_id}:{client_ip}");
+        let gate = {
+            let mut gates = self
+                .api_key_ip_concurrency_gates
+                .lock()
+                .expect("api key ip concurrency gates should lock");
+            let entry =
+                gates
+                    .entry(gate_key.clone())
+                    .or_insert_with(|| ApiKeyIpConcurrencyGateEntry {
+                        limit,
+                        gate: Arc::new(ConcurrencyGate::new("auth_api_key_ip", limit)),
+                    });
+            if entry.limit != limit {
+                *entry = ApiKeyIpConcurrencyGateEntry {
+                    limit,
+                    gate: Arc::new(ConcurrencyGate::new("auth_api_key_ip", limit)),
+                };
+            }
+            Arc::clone(&entry.gate)
+        };
+
+        gate.try_acquire().map(Some)
+    }
+
     pub fn has_auth_api_key_data_reader(&self) -> bool {
         self.data.has_auth_api_key_reader()
     }
@@ -1517,5 +1556,35 @@ mod tests {
             state.read_scheduler_affinity_target(cache_key, ttl),
             Some(next_target)
         );
+    }
+
+    #[test]
+    fn api_key_ip_concurrency_gate_is_scoped_by_key_and_ip() {
+        let state = AppState::new().expect("app state should build");
+        let first = state
+            .try_acquire_api_key_ip_concurrency_permit("api-key-1", "203.0.113.10", 1)
+            .expect("first permit should acquire")
+            .expect("first permit should exist");
+
+        assert!(
+            state
+                .try_acquire_api_key_ip_concurrency_permit("api-key-1", "203.0.113.10", 1)
+                .is_err(),
+            "same API key and same IP should be limited"
+        );
+        assert!(state
+            .try_acquire_api_key_ip_concurrency_permit("api-key-1", "203.0.113.11", 1)
+            .expect("different IP should be allowed")
+            .is_some());
+        assert!(state
+            .try_acquire_api_key_ip_concurrency_permit("api-key-2", "203.0.113.10", 1)
+            .expect("different API key should be allowed")
+            .is_some());
+
+        drop(first);
+        assert!(state
+            .try_acquire_api_key_ip_concurrency_permit("api-key-1", "203.0.113.10", 1)
+            .expect("permit should be released after drop")
+            .is_some());
     }
 }

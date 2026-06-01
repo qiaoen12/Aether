@@ -300,6 +300,39 @@
               留空表示不限制，填 0 也表示不限制并发
             </p>
           </div>
+
+          <div class="space-y-2">
+            <Label
+              for="form-per-ip-concurrency-limit"
+              class="text-sm font-medium"
+            >单 IP 并发限制</Label>
+            <div class="flex items-center gap-3">
+              <div class="flex-1 min-w-0">
+                <Input
+                  v-if="!form.per_ip_concurrency_limit_unlimited"
+                  id="form-per-ip-concurrency-limit"
+                  :model-value="form.per_ip_concurrency_limit ?? ''"
+                  type="number"
+                  min="0"
+                  max="10000"
+                  placeholder="0 = 不限制"
+                  class="h-10"
+                  @update:model-value="(v) => form.per_ip_concurrency_limit = parseNumberInput(v, { min: 0, max: 10000 })"
+                />
+                <span
+                  v-else
+                  class="flex h-10 w-full items-center rounded-lg border bg-background px-3 text-sm text-muted-foreground opacity-60"
+                >不限制</span>
+              </div>
+              <Switch
+                v-model="form.per_ip_concurrency_limit_unlimited"
+                class="shrink-0"
+              />
+            </div>
+            <p class="text-xs text-muted-foreground">
+              对同一个 API Key 的每个来源 IP 单独计数，0 表示不限制
+            </p>
+          </div>
         </div>
       </div>
     </form>
@@ -356,6 +389,7 @@ export interface StandaloneKeyFormData {
   expires_at?: string  // ISO 日期字符串，如 "2025-12-31"，undefined = 永不过期
   rate_limit?: number | null
   concurrent_limit?: number | null
+  per_ip_concurrency_limit?: number | null
   auto_delete_on_expiry: boolean
   allowed_providers?: string[] | null
   allowed_api_formats?: string[] | null
@@ -375,6 +409,8 @@ interface StandaloneKeyFormState {
   rate_limit?: number
   concurrent_limit_inherited: boolean
   concurrent_limit?: number
+  per_ip_concurrency_limit_unlimited: boolean
+  per_ip_concurrency_limit?: number
   auto_delete_on_expiry: boolean
   provider_unrestricted: boolean
   api_format_unrestricted: boolean
@@ -435,6 +471,8 @@ const form = ref<StandaloneKeyFormState>({
   rate_limit: undefined,
   concurrent_limit_inherited: true,
   concurrent_limit: undefined,
+  per_ip_concurrency_limit_unlimited: true,
+  per_ip_concurrency_limit: undefined,
   auto_delete_on_expiry: false,
   provider_unrestricted: true,
   api_format_unrestricted: true,
@@ -484,6 +522,8 @@ function resetForm() {
     rate_limit: undefined,
     concurrent_limit_inherited: true,
     concurrent_limit: undefined,
+    per_ip_concurrency_limit_unlimited: true,
+    per_ip_concurrency_limit: undefined,
     auto_delete_on_expiry: false,
     provider_unrestricted: true,
     api_format_unrestricted: true,
@@ -511,6 +551,8 @@ function loadKeyData() {
     rate_limit: props.apiKey.rate_limit ?? undefined,
     concurrent_limit_inherited: props.apiKey.concurrent_limit == null,
     concurrent_limit: props.apiKey.concurrent_limit ?? undefined,
+    per_ip_concurrency_limit_unlimited: props.apiKey.per_ip_concurrency_limit == null || props.apiKey.per_ip_concurrency_limit === 0,
+    per_ip_concurrency_limit: props.apiKey.per_ip_concurrency_limit ?? undefined,
     auto_delete_on_expiry: props.apiKey.auto_delete_on_expiry,
     provider_unrestricted: props.apiKey.allowed_providers == null,
     api_format_unrestricted: props.apiKey.allowed_api_formats == null,
@@ -565,6 +607,7 @@ function handleSubmit() {
     expires_at: form.value.expires_at,
     rate_limit: form.value.rate_limit_inherited ? null : (form.value.rate_limit ?? 0),
     concurrent_limit: form.value.concurrent_limit_inherited ? null : (form.value.concurrent_limit ?? 0),
+    per_ip_concurrency_limit: form.value.per_ip_concurrency_limit_unlimited ? 0 : (form.value.per_ip_concurrency_limit ?? 0),
     auto_delete_on_expiry: form.value.auto_delete_on_expiry,
     allowed_providers: form.value.provider_unrestricted ? null : [...form.value.allowed_providers],
     allowed_api_formats: form.value.api_format_unrestricted ? null : [...form.value.allowed_api_formats],
@@ -613,6 +656,15 @@ watch(
   (inherited) => {
     if (!inherited && form.value.concurrent_limit == null) {
       form.value.concurrent_limit = 0
+    }
+  }
+)
+
+watch(
+  () => form.value.per_ip_concurrency_limit_unlimited,
+  (unlimited) => {
+    if (!unlimited && form.value.per_ip_concurrency_limit == null) {
+      form.value.per_ip_concurrency_limit = 1
     }
   }
 )

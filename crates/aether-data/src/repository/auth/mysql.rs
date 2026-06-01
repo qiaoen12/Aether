@@ -31,6 +31,7 @@ SELECT
   api_keys.is_standalone AS api_key_is_standalone,
   api_keys.rate_limit AS api_key_rate_limit,
   api_keys.concurrent_limit AS api_key_concurrent_limit,
+  api_keys.per_ip_concurrency_limit AS api_key_per_ip_concurrency_limit,
   api_keys.expires_at AS api_key_expires_at_unix_secs,
   api_keys.allowed_providers AS api_key_allowed_providers,
   api_keys.allowed_api_formats AS api_key_allowed_api_formats,
@@ -53,6 +54,7 @@ SELECT
   api_keys.ip_rules,
   api_keys.rate_limit,
   api_keys.concurrent_limit,
+  api_keys.per_ip_concurrency_limit,
   api_keys.force_capabilities,
   api_keys.feature_settings,
   api_keys.is_active,
@@ -115,11 +117,12 @@ impl MysqlAuthApiKeyReadRepository {
 INSERT INTO api_keys (
   id, user_id, key_hash, key_encrypted, name, allowed_providers,
   allowed_api_formats, allowed_models, ip_rules, rate_limit, concurrent_limit,
+  per_ip_concurrency_limit,
   force_capabilities, feature_settings, is_active, expires_at, auto_delete_on_expiry,
   total_requests, total_tokens, total_cost_usd, is_standalone,
   created_at, updated_at
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 "#,
         )
         .bind(&record.api_key_id)
@@ -145,6 +148,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         )?)
         .bind(record.rate_limit)
         .bind(record.concurrent_limit)
+        .bind(record.per_ip_concurrency_limit)
         .bind(optional_json_to_string(
             &record.force_capabilities,
             "api_keys.force_capabilities",
@@ -184,6 +188,7 @@ struct CreateApiKeyInsertRecord {
     ip_rules: Option<Vec<String>>,
     rate_limit: Option<i32>,
     concurrent_limit: Option<i32>,
+    per_ip_concurrency_limit: Option<i32>,
     force_capabilities: Option<serde_json::Value>,
     is_active: bool,
     expires_at_unix_secs: Option<u64>,
@@ -427,6 +432,7 @@ WHERE id = ?
             ip_rules: record.ip_rules,
             rate_limit: Some(record.rate_limit),
             concurrent_limit: record.concurrent_limit,
+            per_ip_concurrency_limit: record.per_ip_concurrency_limit,
             force_capabilities: record.force_capabilities,
             is_active: record.is_active,
             expires_at_unix_secs: record.expires_at_unix_secs,
@@ -455,6 +461,7 @@ WHERE id = ?
             ip_rules: record.ip_rules,
             rate_limit: record.rate_limit,
             concurrent_limit: record.concurrent_limit,
+            per_ip_concurrency_limit: record.per_ip_concurrency_limit,
             force_capabilities: record.force_capabilities,
             is_active: record.is_active,
             expires_at_unix_secs: record.expires_at_unix_secs,
@@ -478,6 +485,7 @@ UPDATE api_keys
 SET name = COALESCE(?, name),
     rate_limit = COALESCE(?, rate_limit),
     concurrent_limit = COALESCE(?, concurrent_limit),
+    per_ip_concurrency_limit = COALESCE(?, per_ip_concurrency_limit),
     ip_rules = CASE WHEN ? THEN ? ELSE ip_rules END,
     updated_at = ?
 WHERE id = ?
@@ -488,6 +496,7 @@ WHERE id = ?
         .bind(record.name.as_deref())
         .bind(record.rate_limit)
         .bind(record.concurrent_limit)
+        .bind(record.per_ip_concurrency_limit)
         .bind(record.ip_rules.is_some())
         .bind(json_string_from_nested_string_list(
             &record.ip_rules,
@@ -513,6 +522,7 @@ UPDATE api_keys
 SET name = COALESCE(?, name),
     rate_limit = CASE WHEN ? THEN ? ELSE rate_limit END,
     concurrent_limit = CASE WHEN ? THEN ? ELSE concurrent_limit END,
+    per_ip_concurrency_limit = CASE WHEN ? THEN ? ELSE per_ip_concurrency_limit END,
     allowed_providers = CASE WHEN ? THEN ? ELSE allowed_providers END,
     allowed_api_formats = CASE WHEN ? THEN ? ELSE allowed_api_formats END,
     allowed_models = CASE WHEN ? THEN ? ELSE allowed_models END,
@@ -529,6 +539,8 @@ WHERE id = ?
         .bind(record.rate_limit)
         .bind(record.concurrent_limit_present)
         .bind(record.concurrent_limit)
+        .bind(record.per_ip_concurrency_limit_present)
+        .bind(record.per_ip_concurrency_limit)
         .bind(record.allowed_providers.is_some())
         .bind(json_string_from_nested_string_list(
             &record.allowed_providers,
@@ -972,6 +984,10 @@ fn map_auth_api_key_snapshot_row(
             "api_keys.allowed_models",
         )?,
     )?
+    .with_api_key_per_ip_concurrency_limit(
+        row.try_get("api_key_per_ip_concurrency_limit")
+            .map_sql_err()?,
+    )
     .with_api_key_ip_rules(optional_json_from_string(
         row.try_get("api_key_ip_rules").map_sql_err()?,
         "api_keys.ip_rules",
@@ -1018,6 +1034,10 @@ fn map_auth_api_key_export_row(
         row.try_get("total_cost_usd").map_sql_err()?,
         row.try_get("is_standalone").map_sql_err()?,
     )
+    .and_then(|record| {
+        Ok(record
+            .with_per_ip_concurrency_limit(row.try_get("per_ip_concurrency_limit").map_sql_err()?))
+    })
     .and_then(|record| {
         record.with_ip_rules(optional_json_from_string(
             row.try_get("ip_rules").map_sql_err()?,

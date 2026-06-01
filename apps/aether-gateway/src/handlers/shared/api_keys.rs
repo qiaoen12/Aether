@@ -91,12 +91,21 @@ pub(crate) fn normalize_optional_api_key_concurrent_limit(
     Ok(value)
 }
 
+pub(crate) fn normalize_optional_api_key_per_ip_concurrency_limit(
+    value: Option<i32>,
+) -> Result<Option<i32>, String> {
+    if value.is_some_and(|limit| limit < 0) {
+        return Err("per_ip_concurrency_limit 必须是非负整数".to_string());
+    }
+    Ok(value)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         api_key_placeholder_display_with_prefix, configured_api_key_prefix_from_lookup,
         generate_gateway_api_key_plaintext_with_prefix, generate_gateway_secret_plaintext,
-        masked_gateway_api_key_display,
+        masked_gateway_api_key_display, normalize_optional_api_key_per_ip_concurrency_limit,
     };
 
     #[test]
@@ -151,5 +160,27 @@ mod tests {
             masked_gateway_api_key_display(Some("ak-1234567890abcdef")),
             "ak-1234567...cdef".to_string()
         );
+    }
+
+    #[test]
+    fn accepts_non_negative_per_ip_concurrency_limit() {
+        assert_eq!(
+            normalize_optional_api_key_per_ip_concurrency_limit(None).expect("none should pass"),
+            None
+        );
+        assert_eq!(
+            normalize_optional_api_key_per_ip_concurrency_limit(Some(0)).expect("zero should pass"),
+            Some(0)
+        );
+        assert_eq!(
+            normalize_optional_api_key_per_ip_concurrency_limit(Some(2))
+                .expect("positive value should pass"),
+            Some(2)
+        );
+    }
+
+    #[test]
+    fn rejects_negative_per_ip_concurrency_limit() {
+        assert!(normalize_optional_api_key_per_ip_concurrency_limit(Some(-1)).is_err());
     }
 }

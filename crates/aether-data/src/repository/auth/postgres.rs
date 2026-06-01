@@ -33,6 +33,7 @@ SELECT
   api_keys.is_standalone AS api_key_is_standalone,
   api_keys.rate_limit AS api_key_rate_limit,
   api_keys.concurrent_limit AS api_key_concurrent_limit,
+  api_keys.per_ip_concurrency_limit AS api_key_per_ip_concurrency_limit,
   CAST(EXTRACT(EPOCH FROM api_keys.expires_at) AS BIGINT) AS api_key_expires_at_unix_secs,
   api_keys.allowed_providers AS api_key_allowed_providers,
   api_keys.allowed_api_formats AS api_key_allowed_api_formats,
@@ -64,6 +65,7 @@ SELECT
   api_keys.is_standalone AS api_key_is_standalone,
   api_keys.rate_limit AS api_key_rate_limit,
   api_keys.concurrent_limit AS api_key_concurrent_limit,
+  api_keys.per_ip_concurrency_limit AS api_key_per_ip_concurrency_limit,
   CAST(EXTRACT(EPOCH FROM api_keys.expires_at) AS BIGINT) AS api_key_expires_at_unix_secs,
   api_keys.allowed_providers AS api_key_allowed_providers,
   api_keys.allowed_api_formats AS api_key_allowed_api_formats,
@@ -95,6 +97,7 @@ SELECT
   api_keys.is_standalone AS api_key_is_standalone,
   api_keys.rate_limit AS api_key_rate_limit,
   api_keys.concurrent_limit AS api_key_concurrent_limit,
+  api_keys.per_ip_concurrency_limit AS api_key_per_ip_concurrency_limit,
   CAST(EXTRACT(EPOCH FROM api_keys.expires_at) AS BIGINT) AS api_key_expires_at_unix_secs,
   api_keys.allowed_providers AS api_key_allowed_providers,
   api_keys.allowed_api_formats AS api_key_allowed_api_formats,
@@ -126,6 +129,7 @@ SELECT
   api_keys.is_standalone AS api_key_is_standalone,
   api_keys.rate_limit AS api_key_rate_limit,
   api_keys.concurrent_limit AS api_key_concurrent_limit,
+  api_keys.per_ip_concurrency_limit AS api_key_per_ip_concurrency_limit,
   CAST(EXTRACT(EPOCH FROM api_keys.expires_at) AS BIGINT) AS api_key_expires_at_unix_secs,
   api_keys.allowed_providers AS api_key_allowed_providers,
   api_keys.allowed_api_formats AS api_key_allowed_api_formats,
@@ -150,6 +154,7 @@ SELECT
   api_keys.ip_rules,
   api_keys.rate_limit,
   api_keys.concurrent_limit,
+  api_keys.per_ip_concurrency_limit,
   api_keys.force_capabilities,
   api_keys.feature_settings,
   api_keys.is_active,
@@ -181,6 +186,7 @@ SELECT
   api_keys.ip_rules,
   api_keys.rate_limit,
   api_keys.concurrent_limit,
+  api_keys.per_ip_concurrency_limit,
   api_keys.force_capabilities,
   api_keys.feature_settings,
   api_keys.is_active,
@@ -211,6 +217,7 @@ SELECT
   api_keys.ip_rules,
   api_keys.rate_limit,
   api_keys.concurrent_limit,
+  api_keys.per_ip_concurrency_limit,
   api_keys.force_capabilities,
   api_keys.feature_settings,
   api_keys.is_active,
@@ -241,6 +248,7 @@ SELECT
   api_keys.ip_rules,
   api_keys.rate_limit,
   api_keys.concurrent_limit,
+  api_keys.per_ip_concurrency_limit,
   api_keys.force_capabilities,
   api_keys.feature_settings,
   api_keys.is_active,
@@ -271,6 +279,7 @@ SELECT
   api_keys.ip_rules,
   api_keys.rate_limit,
   api_keys.concurrent_limit,
+  api_keys.per_ip_concurrency_limit,
   api_keys.force_capabilities,
   api_keys.feature_settings,
   api_keys.is_active,
@@ -345,6 +354,7 @@ SELECT
   api_keys.ip_rules,
   api_keys.rate_limit,
   api_keys.concurrent_limit,
+  api_keys.per_ip_concurrency_limit,
   api_keys.force_capabilities,
   api_keys.feature_settings,
   api_keys.is_active,
@@ -382,6 +392,7 @@ INSERT INTO api_keys (
   ip_rules,
   rate_limit,
   concurrent_limit,
+  per_ip_concurrency_limit,
   force_capabilities,
   feature_settings,
   is_active,
@@ -408,8 +419,8 @@ VALUES (
   $10,
   $11,
   $12,
-  NULL,
   $13,
+  NULL,
   $14,
   $15,
   FALSE,
@@ -432,6 +443,7 @@ RETURNING
   ip_rules,
   rate_limit,
   concurrent_limit,
+  per_ip_concurrency_limit,
   force_capabilities,
   feature_settings,
   is_active,
@@ -459,6 +471,7 @@ INSERT INTO api_keys (
   ip_rules,
   rate_limit,
   concurrent_limit,
+  per_ip_concurrency_limit,
   force_capabilities,
   feature_settings,
   is_active,
@@ -485,8 +498,8 @@ VALUES (
   $10,
   $11,
   $12,
-  NULL,
   $13,
+  NULL,
   $14,
   $15,
   FALSE,
@@ -509,6 +522,7 @@ RETURNING
   ip_rules,
   rate_limit,
   concurrent_limit,
+  per_ip_concurrency_limit,
   force_capabilities,
   feature_settings,
   is_active,
@@ -529,7 +543,8 @@ SET
   name = COALESCE($3, name),
   rate_limit = COALESCE($4, rate_limit),
   concurrent_limit = COALESCE($5, concurrent_limit),
-  ip_rules = CASE WHEN $6 THEN $7::jsonb ELSE ip_rules END,
+  per_ip_concurrency_limit = COALESCE($6, per_ip_concurrency_limit),
+  ip_rules = CASE WHEN $7 THEN $8::jsonb ELSE ip_rules END,
   updated_at = NOW()
 WHERE user_id = $1
   AND id = $2
@@ -546,6 +561,7 @@ RETURNING
   ip_rules,
   rate_limit,
   concurrent_limit,
+  per_ip_concurrency_limit,
   force_capabilities,
   feature_settings,
   is_active,
@@ -566,12 +582,13 @@ SET
   name = COALESCE($2, name),
   rate_limit = CASE WHEN $3 THEN $4 ELSE rate_limit END,
   concurrent_limit = CASE WHEN $5 THEN $6 ELSE concurrent_limit END,
-  allowed_providers = CASE WHEN $7 THEN $8::json ELSE allowed_providers END,
-  allowed_api_formats = CASE WHEN $9 THEN $10::json ELSE allowed_api_formats END,
-  allowed_models = CASE WHEN $11 THEN $12::json ELSE allowed_models END,
-  ip_rules = CASE WHEN $13 THEN $14::jsonb ELSE ip_rules END,
-  expires_at = CASE WHEN $15 THEN $16::timestamptz ELSE expires_at END,
-  auto_delete_on_expiry = CASE WHEN $17 THEN $18 ELSE auto_delete_on_expiry END,
+  per_ip_concurrency_limit = CASE WHEN $7 THEN $8 ELSE per_ip_concurrency_limit END,
+  allowed_providers = CASE WHEN $9 THEN $10::json ELSE allowed_providers END,
+  allowed_api_formats = CASE WHEN $11 THEN $12::json ELSE allowed_api_formats END,
+  allowed_models = CASE WHEN $13 THEN $14::json ELSE allowed_models END,
+  ip_rules = CASE WHEN $15 THEN $16::jsonb ELSE ip_rules END,
+  expires_at = CASE WHEN $17 THEN $18::timestamptz ELSE expires_at END,
+  auto_delete_on_expiry = CASE WHEN $19 THEN $20 ELSE auto_delete_on_expiry END,
   updated_at = NOW()
 WHERE id = $1
   AND is_standalone = TRUE
@@ -587,6 +604,7 @@ RETURNING
   ip_rules,
   rate_limit,
   concurrent_limit,
+  per_ip_concurrency_limit,
   force_capabilities,
   feature_settings,
   is_active,
@@ -621,6 +639,7 @@ RETURNING
   ip_rules,
   rate_limit,
   concurrent_limit,
+  per_ip_concurrency_limit,
   force_capabilities,
   feature_settings,
   is_active,
@@ -654,6 +673,7 @@ RETURNING
   ip_rules,
   rate_limit,
   concurrent_limit,
+  per_ip_concurrency_limit,
   force_capabilities,
   feature_settings,
   is_active,
@@ -688,6 +708,7 @@ RETURNING
   ip_rules,
   rate_limit,
   concurrent_limit,
+  per_ip_concurrency_limit,
   force_capabilities,
   feature_settings,
   is_active,
@@ -732,6 +753,7 @@ RETURNING
   ip_rules,
   rate_limit,
   concurrent_limit,
+  per_ip_concurrency_limit,
   force_capabilities,
   feature_settings,
   is_active,
@@ -763,8 +785,10 @@ RETURNING
   allowed_providers,
   allowed_api_formats,
   allowed_models,
+  ip_rules,
   rate_limit,
   concurrent_limit,
+  per_ip_concurrency_limit,
   force_capabilities,
   feature_settings,
   is_active,
@@ -1204,6 +1228,7 @@ impl AuthApiKeyWriteRepository for SqlxAuthApiKeySnapshotReadRepository {
             .bind(ip_rules)
             .bind(record.rate_limit)
             .bind(record.concurrent_limit)
+            .bind(record.per_ip_concurrency_limit)
             .bind(record.force_capabilities)
             .bind(record.is_active)
             .bind(expires_at)
@@ -1261,6 +1286,7 @@ impl AuthApiKeyWriteRepository for SqlxAuthApiKeySnapshotReadRepository {
             .bind(ip_rules)
             .bind(record.rate_limit)
             .bind(record.concurrent_limit)
+            .bind(record.per_ip_concurrency_limit)
             .bind(record.force_capabilities)
             .bind(record.is_active)
             .bind(expires_at)
@@ -1291,6 +1317,7 @@ impl AuthApiKeyWriteRepository for SqlxAuthApiKeySnapshotReadRepository {
             .bind(record.name)
             .bind(record.rate_limit)
             .bind(record.concurrent_limit)
+            .bind(record.per_ip_concurrency_limit)
             .bind(record.ip_rules.is_some())
             .bind(ip_rules)
             .fetch_optional(&self.pool)
@@ -1346,6 +1373,8 @@ impl AuthApiKeyWriteRepository for SqlxAuthApiKeySnapshotReadRepository {
             .bind(record.rate_limit)
             .bind(record.concurrent_limit_present)
             .bind(record.concurrent_limit)
+            .bind(record.per_ip_concurrency_limit_present)
+            .bind(record.per_ip_concurrency_limit)
             .bind(record.allowed_providers.is_some())
             .bind(allowed_providers)
             .bind(record.allowed_api_formats.is_some())
@@ -1601,6 +1630,7 @@ fn map_auth_api_key_snapshot_row(
         row_get(row, "api_key_allowed_api_formats")?,
         row_get(row, "api_key_allowed_models")?,
     )?
+    .with_api_key_per_ip_concurrency_limit(row_get(row, "api_key_per_ip_concurrency_limit")?)
     .with_api_key_ip_rules(row_get(row, "api_key_ip_rules")?)?;
     Ok(snapshot.with_user_rate_limit(row_get(row, "user_rate_limit")?))
 }
@@ -1629,6 +1659,9 @@ fn map_auth_api_key_export_row(
         row_get(row, "total_cost_usd")?,
         row_get(row, "is_standalone")?,
     )
+    .and_then(|record| {
+        Ok(record.with_per_ip_concurrency_limit(row_get(row, "per_ip_concurrency_limit")?))
+    })
     .and_then(|record| record.with_ip_rules(row_get(row, "ip_rules")?))
     .map(|record| record.with_feature_settings(feature_settings))
     .and_then(|record| {
@@ -1653,41 +1686,44 @@ mod tests {
     fn create_api_key_sql_orders_expiry_before_standalone_flags() {
         assert!(CREATE_USER_API_KEY_SQL
             .contains("expires_at,\n  auto_delete_on_expiry,\n  is_locked,\n  is_standalone,"));
-        assert!(
-            CREATE_USER_API_KEY_SQL.contains("$13,\n  $14,\n  $15,\n  FALSE,\n  FALSE,\n  $16,")
-        );
+        assert!(CREATE_USER_API_KEY_SQL
+            .contains("$13,\n  NULL,\n  $14,\n  $15,\n  FALSE,\n  FALSE,\n  $16,"));
         assert!(CREATE_STANDALONE_API_KEY_SQL
             .contains("expires_at,\n  auto_delete_on_expiry,\n  is_locked,\n  is_standalone,"));
         assert!(CREATE_STANDALONE_API_KEY_SQL
-            .contains("$13,\n  $14,\n  $15,\n  FALSE,\n  TRUE,\n  $16,"));
+            .contains("$13,\n  NULL,\n  $14,\n  $15,\n  FALSE,\n  TRUE,\n  $16,"));
     }
 
     #[test]
     fn update_standalone_api_key_basic_sql_casts_json_case_values() {
         assert!(UPDATE_STANDALONE_API_KEY_BASIC_SQL
             .contains("concurrent_limit = CASE WHEN $5 THEN $6 ELSE concurrent_limit END"));
-        assert!(UPDATE_STANDALONE_API_KEY_BASIC_SQL
-            .contains("allowed_providers = CASE WHEN $7 THEN $8::json ELSE allowed_providers END"));
         assert!(UPDATE_STANDALONE_API_KEY_BASIC_SQL.contains(
-            "allowed_api_formats = CASE WHEN $9 THEN $10::json ELSE allowed_api_formats END"
+            "per_ip_concurrency_limit = CASE WHEN $7 THEN $8 ELSE per_ip_concurrency_limit END"
+        ));
+        assert!(UPDATE_STANDALONE_API_KEY_BASIC_SQL.contains(
+            "allowed_providers = CASE WHEN $9 THEN $10::json ELSE allowed_providers END"
+        ));
+        assert!(UPDATE_STANDALONE_API_KEY_BASIC_SQL.contains(
+            "allowed_api_formats = CASE WHEN $11 THEN $12::json ELSE allowed_api_formats END"
         ));
         assert!(UPDATE_STANDALONE_API_KEY_BASIC_SQL
-            .contains("allowed_models = CASE WHEN $11 THEN $12::json ELSE allowed_models END"));
+            .contains("allowed_models = CASE WHEN $13 THEN $14::json ELSE allowed_models END"));
         assert!(UPDATE_STANDALONE_API_KEY_BASIC_SQL
-            .contains("ip_rules = CASE WHEN $13 THEN $14::jsonb ELSE ip_rules END"));
+            .contains("ip_rules = CASE WHEN $15 THEN $16::jsonb ELSE ip_rules END"));
         assert!(UPDATE_STANDALONE_API_KEY_BASIC_SQL
             .contains("rate_limit = CASE WHEN $3 THEN $4 ELSE rate_limit END"));
         assert!(UPDATE_STANDALONE_API_KEY_BASIC_SQL
-            .contains("expires_at = CASE WHEN $15 THEN $16::timestamptz ELSE expires_at END"));
+            .contains("expires_at = CASE WHEN $17 THEN $18::timestamptz ELSE expires_at END"));
         assert!(UPDATE_STANDALONE_API_KEY_BASIC_SQL.contains(
-            "auto_delete_on_expiry = CASE WHEN $17 THEN $18 ELSE auto_delete_on_expiry END"
+            "auto_delete_on_expiry = CASE WHEN $19 THEN $20 ELSE auto_delete_on_expiry END"
         ));
     }
 
     #[test]
     fn update_user_api_key_basic_sql_casts_ip_rules_as_jsonb() {
         assert!(UPDATE_USER_API_KEY_BASIC_SQL
-            .contains("ip_rules = CASE WHEN $6 THEN $7::jsonb ELSE ip_rules END"));
+            .contains("ip_rules = CASE WHEN $7 THEN $8::jsonb ELSE ip_rules END"));
     }
 
     #[tokio::test]

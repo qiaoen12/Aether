@@ -20,6 +20,7 @@ pub struct StoredAuthApiKeySnapshot {
     pub api_key_is_standalone: bool,
     pub api_key_rate_limit: Option<i32>,
     pub api_key_concurrent_limit: Option<i32>,
+    pub api_key_per_ip_concurrency_limit: Option<i32>,
     pub api_key_expires_at_unix_secs: Option<u64>,
     pub api_key_allowed_providers: Option<Vec<String>>,
     pub api_key_allowed_api_formats: Option<Vec<String>>,
@@ -77,6 +78,7 @@ impl StoredAuthApiKeySnapshot {
             api_key_is_standalone,
             api_key_rate_limit,
             api_key_concurrent_limit,
+            api_key_per_ip_concurrency_limit: None,
             api_key_expires_at_unix_secs: api_key_expires_at_unix_secs
                 .map(|value| {
                     u64::try_from(value).map_err(|_| {
@@ -108,6 +110,14 @@ impl StoredAuthApiKeySnapshot {
     ) -> Result<Self, crate::DataLayerError> {
         self.api_key_ip_rules = parse_string_list(api_key_ip_rules, "api_keys.ip_rules")?;
         Ok(self)
+    }
+
+    pub fn with_api_key_per_ip_concurrency_limit(
+        mut self,
+        api_key_per_ip_concurrency_limit: Option<i32>,
+    ) -> Self {
+        self.api_key_per_ip_concurrency_limit = api_key_per_ip_concurrency_limit;
+        self
     }
 
     pub fn is_currently_usable(&self, now_unix_secs: u64) -> bool {
@@ -154,6 +164,7 @@ pub struct ResolvedAuthApiKeySnapshot {
     pub api_key_is_standalone: bool,
     pub api_key_rate_limit: Option<i32>,
     pub api_key_concurrent_limit: Option<i32>,
+    pub api_key_per_ip_concurrency_limit: Option<i32>,
     pub api_key_expires_at_unix_secs: Option<u64>,
     pub api_key_allowed_providers: Option<Vec<String>>,
     pub api_key_allowed_api_formats: Option<Vec<String>>,
@@ -184,6 +195,7 @@ impl ResolvedAuthApiKeySnapshot {
             api_key_is_standalone: snapshot.api_key_is_standalone,
             api_key_rate_limit: snapshot.api_key_rate_limit,
             api_key_concurrent_limit: snapshot.api_key_concurrent_limit,
+            api_key_per_ip_concurrency_limit: snapshot.api_key_per_ip_concurrency_limit,
             api_key_expires_at_unix_secs: snapshot.api_key_expires_at_unix_secs,
             api_key_allowed_providers: snapshot.api_key_allowed_providers,
             api_key_allowed_api_formats: snapshot.api_key_allowed_api_formats,
@@ -347,6 +359,7 @@ pub struct StoredAuthApiKeyExportRecord {
     pub ip_rules: Option<Vec<String>>,
     pub rate_limit: Option<i32>,
     pub concurrent_limit: Option<i32>,
+    pub per_ip_concurrency_limit: Option<i32>,
     pub force_capabilities: Option<serde_json::Value>,
     pub feature_settings: Option<serde_json::Value>,
     pub is_active: bool,
@@ -419,6 +432,7 @@ impl StoredAuthApiKeyExportRecord {
             ip_rules: None,
             rate_limit,
             concurrent_limit,
+            per_ip_concurrency_limit: None,
             force_capabilities,
             feature_settings: None,
             is_active,
@@ -466,6 +480,11 @@ impl StoredAuthApiKeyExportRecord {
         self.ip_rules = parse_string_list(ip_rules, "api_keys.ip_rules")?;
         Ok(self)
     }
+
+    pub fn with_per_ip_concurrency_limit(mut self, per_ip_concurrency_limit: Option<i32>) -> Self {
+        self.per_ip_concurrency_limit = per_ip_concurrency_limit;
+        self
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
@@ -494,6 +513,7 @@ pub struct CreateUserApiKeyRecord {
     pub ip_rules: Option<Vec<String>>,
     pub rate_limit: i32,
     pub concurrent_limit: Option<i32>,
+    pub per_ip_concurrency_limit: Option<i32>,
     pub force_capabilities: Option<serde_json::Value>,
     pub is_active: bool,
     pub expires_at_unix_secs: Option<u64>,
@@ -510,6 +530,7 @@ pub struct UpdateUserApiKeyBasicRecord {
     pub name: Option<String>,
     pub rate_limit: Option<i32>,
     pub concurrent_limit: Option<i32>,
+    pub per_ip_concurrency_limit: Option<i32>,
     pub ip_rules: Option<Option<Vec<String>>>,
 }
 
@@ -526,6 +547,7 @@ pub struct CreateStandaloneApiKeyRecord {
     pub ip_rules: Option<Vec<String>>,
     pub rate_limit: Option<i32>,
     pub concurrent_limit: Option<i32>,
+    pub per_ip_concurrency_limit: Option<i32>,
     pub force_capabilities: Option<serde_json::Value>,
     pub is_active: bool,
     pub expires_at_unix_secs: Option<u64>,
@@ -543,6 +565,8 @@ pub struct UpdateStandaloneApiKeyBasicRecord {
     pub rate_limit: Option<i32>,
     pub concurrent_limit_present: bool,
     pub concurrent_limit: Option<i32>,
+    pub per_ip_concurrency_limit_present: bool,
+    pub per_ip_concurrency_limit: Option<i32>,
     pub allowed_providers: Option<Option<Vec<String>>>,
     pub allowed_api_formats: Option<Option<Vec<String>>>,
     pub allowed_models: Option<Option<Vec<String>>>,

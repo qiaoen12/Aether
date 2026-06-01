@@ -367,6 +367,10 @@ impl<'a> AdminAppState<'a> {
             ("rate_limit".to_string(), json!(key.rate_limit)),
             ("concurrent_limit".to_string(), json!(key.concurrent_limit)),
             (
+                "per_ip_concurrency_limit".to_string(),
+                json!(key.per_ip_concurrency_limit),
+            ),
+            (
                 "force_capabilities".to_string(),
                 json!(key.force_capabilities.clone()),
             ),

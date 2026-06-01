@@ -13,7 +13,10 @@ use crate::handlers::admin::users::{
     normalize_admin_user_api_formats, normalize_admin_user_ip_rules,
     normalize_admin_user_string_list,
 };
-use crate::handlers::shared::normalize_optional_api_key_concurrent_limit;
+use crate::handlers::shared::{
+    normalize_optional_api_key_concurrent_limit,
+    normalize_optional_api_key_per_ip_concurrency_limit,
+};
 use crate::GatewayError;
 use aether_admin::system::serialize_admin_system_users_export_wallet;
 use axum::{
@@ -124,6 +127,12 @@ pub(super) async fn build_admin_create_api_key_response(
             Ok(value) => value,
             Err(detail) => return Ok(build_admin_api_keys_bad_request_response(detail)),
         };
+    let per_ip_concurrency_limit =
+        match normalize_optional_api_key_per_ip_concurrency_limit(payload.per_ip_concurrency_limit)
+        {
+            Ok(value) => value,
+            Err(detail) => return Ok(build_admin_api_keys_bad_request_response(detail)),
+        };
     let (initial_balance_usd, unlimited_balance) = match normalize_standalone_initial_balance(
         payload.initial_balance_usd,
         payload.unlimited_balance,
@@ -170,6 +179,7 @@ pub(super) async fn build_admin_create_api_key_response(
                 ip_rules,
                 rate_limit: payload.rate_limit,
                 concurrent_limit,
+                per_ip_concurrency_limit,
                 force_capabilities: None,
                 is_active: true,
                 expires_at_unix_secs,
@@ -209,6 +219,7 @@ pub(super) async fn build_admin_create_api_key_response(
             "is_active": created.is_active,
             "rate_limit": created.rate_limit,
             "concurrent_limit": created.concurrent_limit,
+            "per_ip_concurrency_limit": created.per_ip_concurrency_limit,
             "allowed_providers": created.allowed_providers,
             "allowed_api_formats": created.allowed_api_formats,
             "allowed_models": created.allowed_models,
@@ -306,6 +317,12 @@ pub(super) async fn build_admin_update_api_key_response(
     }
     let concurrent_limit =
         match normalize_optional_api_key_concurrent_limit(payload.concurrent_limit) {
+            Ok(value) => value,
+            Err(detail) => return Ok(build_admin_api_keys_bad_request_response(detail)),
+        };
+    let per_ip_concurrency_limit =
+        match normalize_optional_api_key_per_ip_concurrency_limit(payload.per_ip_concurrency_limit)
+        {
             Ok(value) => value,
             Err(detail) => return Ok(build_admin_api_keys_bad_request_response(detail)),
         };
@@ -410,6 +427,9 @@ pub(super) async fn build_admin_update_api_key_response(
                 rate_limit: payload.rate_limit,
                 concurrent_limit_present: field_presence.contains("concurrent_limit"),
                 concurrent_limit,
+                per_ip_concurrency_limit_present: field_presence
+                    .contains("per_ip_concurrency_limit"),
+                per_ip_concurrency_limit,
                 allowed_providers,
                 allowed_api_formats,
                 allowed_models,

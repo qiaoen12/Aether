@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS public.api_keys (
     ip_rules jsonb,
     rate_limit integer DEFAULT 100,
     concurrent_limit integer,
+    per_ip_concurrency_limit integer,
     force_capabilities jsonb,
     feature_settings jsonb,
     is_active boolean DEFAULT true NOT NULL,
@@ -227,4 +228,3 @@ CREATE TABLE IF NOT EXISTS public.user_sessions (
 ALTER TABLE ONLY public.user_sessions ADD CONSTRAINT user_sessions_pkey PRIMARY KEY (id);
 CREATE INDEX IF NOT EXISTS user_sessions_user_active_idx ON public.user_sessions USING btree (user_id, revoked_at, expires_at);
 CREATE INDEX IF NOT EXISTS user_sessions_user_device_idx ON public.user_sessions USING btree (user_id, client_device_id);
-

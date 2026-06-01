@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
     ip_rules TEXT,
     rate_limit INTEGER DEFAULT 100,
     concurrent_limit INTEGER,
+    per_ip_concurrency_limit INTEGER,
     force_capabilities TEXT,
     feature_settings TEXT,
     is_active INTEGER NOT NULL DEFAULT 1,
@@ -208,4 +209,3 @@ CREATE TABLE IF NOT EXISTS user_sessions (
 );
 CREATE INDEX IF NOT EXISTS user_sessions_user_active_idx ON user_sessions (user_id, revoked_at, expires_at);
 CREATE INDEX IF NOT EXISTS user_sessions_user_device_idx ON user_sessions (user_id, client_device_id);
-

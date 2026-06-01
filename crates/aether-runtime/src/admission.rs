@@ -6,14 +6,14 @@ use futures_util::StreamExt;
 use crate::concurrency::ConcurrencyPermit;
 
 pub struct AdmissionPermit {
-    _local: Option<ConcurrencyPermit>,
+    _local: Vec<ConcurrencyPermit>,
     _distributed: Option<Box<dyn Send + Sync>>,
 }
 
 impl std::fmt::Debug for AdmissionPermit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AdmissionPermit")
-            .field("has_local", &self._local.is_some())
+            .field("local_count", &self._local.len())
             .field("has_distributed", &self._distributed.is_some())
             .finish()
     }
@@ -28,17 +28,22 @@ impl AdmissionPermit {
             None
         } else {
             Some(Self {
-                _local: local,
+                _local: local.into_iter().collect(),
                 _distributed: distributed.map(|permit| Box::new(permit) as Box<dyn Send + Sync>),
             })
         }
+    }
+
+    pub fn with_local(mut self, permit: ConcurrencyPermit) -> Self {
+        self._local.push(permit);
+        self
     }
 }
 
 impl From<ConcurrencyPermit> for AdmissionPermit {
     fn from(value: ConcurrencyPermit) -> Self {
         Self {
-            _local: Some(value),
+            _local: vec![value],
             _distributed: None,
         }
     }

@@ -44,6 +44,7 @@ pub(super) fn build_admin_user_api_key_detail_payload(
         "total_cost_usd": record.total_cost_usd,
         "rate_limit": record.rate_limit,
         "concurrent_limit": record.concurrent_limit,
+        "per_ip_concurrency_limit": record.per_ip_concurrency_limit,
         "ip_rules": record.ip_rules,
         "feature_settings": record.feature_settings,
         "expires_at": format_optional_unix_secs_iso8601(record.expires_at_unix_secs),

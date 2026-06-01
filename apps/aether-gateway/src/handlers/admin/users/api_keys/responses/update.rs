@@ -9,7 +9,10 @@ use super::super::helpers::{
 use super::super::paths::admin_user_api_key_parts;
 
 use crate::handlers::admin::request::{AdminAppState, AdminRequestContext};
-use crate::handlers::shared::normalize_optional_api_key_concurrent_limit;
+use crate::handlers::shared::{
+    normalize_optional_api_key_concurrent_limit,
+    normalize_optional_api_key_per_ip_concurrency_limit,
+};
 use crate::GatewayError;
 use axum::{
     body::Body,
@@ -94,6 +97,18 @@ pub(crate) async fn build_admin_update_user_api_key_response(
                     .into_response());
             }
         };
+    let per_ip_concurrency_limit =
+        match normalize_optional_api_key_per_ip_concurrency_limit(payload.per_ip_concurrency_limit)
+        {
+            Ok(value) => value,
+            Err(detail) => {
+                return Ok((
+                    http::StatusCode::BAD_REQUEST,
+                    Json(json!({ "detail": detail })),
+                )
+                    .into_response());
+            }
+        };
     let ip_rules = match payload.ip_rules {
         Some(value) => match normalize_admin_user_ip_rules(value) {
             Ok(value) => Some(value),
@@ -115,6 +130,7 @@ pub(crate) async fn build_admin_update_user_api_key_response(
             name,
             rate_limit: payload.rate_limit,
             concurrent_limit,
+            per_ip_concurrency_limit,
             ip_rules,
         })
         .await?

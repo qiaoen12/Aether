@@ -14,6 +14,7 @@ use crate::handlers::shared::{
     deserialize_optional_string_list_patch, generate_gateway_api_key_plaintext,
     masked_gateway_api_key_display, normalize_feature_settings, normalize_ip_rules,
     normalize_optional_api_key_concurrent_limit,
+    normalize_optional_api_key_per_ip_concurrency_limit,
 };
 
 use super::{
@@ -34,6 +35,8 @@ struct UsersMeCreateApiKeyRequest {
     #[serde(default)]
     concurrent_limit: Option<i32>,
     #[serde(default)]
+    per_ip_concurrency_limit: Option<i32>,
+    #[serde(default)]
     feature_settings: Option<serde_json::Value>,
     #[serde(default, alias = "allowed_ips")]
     ip_rules: Option<Vec<String>>,
@@ -47,6 +50,8 @@ struct UsersMeUpdateApiKeyRequest {
     rate_limit: Option<i32>,
     #[serde(default)]
     concurrent_limit: Option<i32>,
+    #[serde(default)]
+    per_ip_concurrency_limit: Option<i32>,
     #[serde(default, deserialize_with = "deserialize_optional_json_patch")]
     feature_settings: Option<Option<serde_json::Value>>,
     #[serde(
@@ -168,6 +173,7 @@ fn build_users_me_api_key_list_payload(
         "total_cost_usd": record.total_cost_usd,
         "rate_limit": record.rate_limit,
         "concurrent_limit": record.concurrent_limit,
+        "per_ip_concurrency_limit": record.per_ip_concurrency_limit,
         "allowed_providers": record.allowed_providers,
         "ip_rules": record.ip_rules,
         "force_capabilities": record.force_capabilities,
@@ -192,6 +198,7 @@ fn build_users_me_api_key_detail_payload(
         "feature_settings": record.feature_settings,
         "rate_limit": record.rate_limit,
         "concurrent_limit": record.concurrent_limit,
+        "per_ip_concurrency_limit": record.per_ip_concurrency_limit,
         "last_used_at": format_users_me_optional_unix_secs_iso8601(record.last_used_at_unix_secs),
         "expires_at": format_users_me_optional_unix_secs_iso8601(record.expires_at_unix_secs),
         "created_at": format_users_me_optional_unix_secs_iso8601(record.created_at_unix_secs),
@@ -551,6 +558,14 @@ pub(super) async fn handle_users_me_api_key_create(
                 return build_auth_error_response(http::StatusCode::BAD_REQUEST, detail, false);
             }
         };
+    let per_ip_concurrency_limit =
+        match normalize_optional_api_key_per_ip_concurrency_limit(payload.per_ip_concurrency_limit)
+        {
+            Ok(value) => value,
+            Err(detail) => {
+                return build_auth_error_response(http::StatusCode::BAD_REQUEST, detail, false);
+            }
+        };
     let feature_settings = match normalize_feature_settings(payload.feature_settings) {
         Ok(value) => value,
         Err(detail) => {
@@ -584,6 +599,7 @@ pub(super) async fn handle_users_me_api_key_create(
         ip_rules,
         rate_limit,
         concurrent_limit,
+        per_ip_concurrency_limit,
         force_capabilities: None,
         is_active: true,
         expires_at_unix_secs: None,
@@ -636,6 +652,7 @@ pub(super) async fn handle_users_me_api_key_create(
         "is_locked": false,
         "rate_limit": created.rate_limit,
         "concurrent_limit": created.concurrent_limit,
+        "per_ip_concurrency_limit": created.per_ip_concurrency_limit,
         "ip_rules": created.ip_rules,
         "feature_settings": created.feature_settings,
         "last_used_at": format_users_me_optional_unix_secs_iso8601(created.last_used_at_unix_secs),
@@ -709,6 +726,14 @@ pub(super) async fn handle_users_me_api_key_update(
                 return build_auth_error_response(http::StatusCode::BAD_REQUEST, detail, false);
             }
         };
+    let per_ip_concurrency_limit =
+        match normalize_optional_api_key_per_ip_concurrency_limit(payload.per_ip_concurrency_limit)
+        {
+            Ok(value) => value,
+            Err(detail) => {
+                return build_auth_error_response(http::StatusCode::BAD_REQUEST, detail, false);
+            }
+        };
     let feature_settings = match payload.feature_settings {
         Some(value) => match normalize_feature_settings(value) {
             Ok(value) => Some(value),
@@ -735,6 +760,7 @@ pub(super) async fn handle_users_me_api_key_update(
             name,
             rate_limit,
             concurrent_limit,
+            per_ip_concurrency_limit,
             ip_rules,
         })
         .await

@@ -11,7 +11,10 @@ use super::super::helpers::{
 use super::super::paths::admin_user_id_from_api_keys_path;
 
 use crate::handlers::admin::request::{AdminAppState, AdminRequestContext};
-use crate::handlers::shared::normalize_optional_api_key_concurrent_limit;
+use crate::handlers::shared::{
+    normalize_optional_api_key_concurrent_limit,
+    normalize_optional_api_key_per_ip_concurrency_limit,
+};
 use crate::GatewayError;
 use axum::{
     body::Body,
@@ -71,7 +74,7 @@ pub(crate) async fn build_admin_create_user_api_key_response(
     {
         return Ok((
             http::StatusCode::BAD_REQUEST,
-            Json(json!({ "detail": "当前仅支持 name、rate_limit、concurrent_limit、allowed_providers、ip_rules 字段" })),
+            Json(json!({ "detail": "当前仅支持 name、rate_limit、concurrent_limit、per_ip_concurrency_limit、allowed_providers、ip_rules 字段" })),
         )
             .into_response());
     }
@@ -136,6 +139,18 @@ pub(crate) async fn build_admin_create_user_api_key_response(
                     .into_response());
             }
         };
+    let per_ip_concurrency_limit =
+        match normalize_optional_api_key_per_ip_concurrency_limit(payload.per_ip_concurrency_limit)
+        {
+            Ok(value) => value,
+            Err(detail) => {
+                return Ok((
+                    http::StatusCode::BAD_REQUEST,
+                    Json(json!({ "detail": detail })),
+                )
+                    .into_response());
+            }
+        };
 
     let plaintext_key = generate_admin_user_api_key_plaintext();
     let Some(key_encrypted) = state.encrypt_catalog_secret_with_fallbacks(&plaintext_key) else {
@@ -159,6 +174,7 @@ pub(crate) async fn build_admin_create_user_api_key_response(
             ip_rules,
             rate_limit,
             concurrent_limit,
+            per_ip_concurrency_limit,
             force_capabilities: None,
             is_active: true,
             expires_at_unix_secs: None,
@@ -207,6 +223,7 @@ pub(crate) async fn build_admin_create_user_api_key_response(
             "key_display": masked_user_api_key_display(state, created.key_encrypted.as_deref()),
             "rate_limit": created.rate_limit,
             "concurrent_limit": created.concurrent_limit,
+            "per_ip_concurrency_limit": created.per_ip_concurrency_limit,
             "ip_rules": created.ip_rules,
             "expires_at": format_optional_unix_secs_iso8601(created.expires_at_unix_secs),
             "last_used_at": format_optional_unix_secs_iso8601(created.last_used_at_unix_secs),

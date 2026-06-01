@@ -78,6 +78,9 @@ impl InMemoryAuthApiKeySnapshotRepository {
                     0.0,
                     snapshot.api_key_is_standalone,
                 )
+                .map(|record| {
+                    record.with_per_ip_concurrency_limit(snapshot.api_key_per_ip_concurrency_limit)
+                })
                 .and_then(|record| {
                     record.with_ip_rules(
                         snapshot
@@ -500,6 +503,7 @@ impl AuthApiKeyWriteRepository for InMemoryAuthApiKeySnapshotRepository {
                 api_key_is_standalone: false,
                 api_key_rate_limit: Some(record.rate_limit),
                 api_key_concurrent_limit: record.concurrent_limit,
+                api_key_per_ip_concurrency_limit: record.per_ip_concurrency_limit,
                 api_key_expires_at_unix_secs: record.expires_at_unix_secs,
                 api_key_allowed_providers: record.allowed_providers.clone(),
                 api_key_allowed_api_formats: record.allowed_api_formats.clone(),
@@ -549,6 +553,7 @@ impl AuthApiKeyWriteRepository for InMemoryAuthApiKeySnapshotRepository {
                     .as_ref()
                     .map(|value| serde_json::json!(value)),
             )?
+            .with_api_key_per_ip_concurrency_limit(record.per_ip_concurrency_limit)
         };
 
         let now_unix_secs = current_unix_secs() as i64;
@@ -581,6 +586,7 @@ impl AuthApiKeyWriteRepository for InMemoryAuthApiKeySnapshotRepository {
             record.total_cost_usd,
             false,
         )?
+        .with_per_ip_concurrency_limit(record.per_ip_concurrency_limit)
         .with_ip_rules(
             record
                 .ip_rules
@@ -636,6 +642,7 @@ impl AuthApiKeyWriteRepository for InMemoryAuthApiKeySnapshotRepository {
                 api_key_is_standalone: true,
                 api_key_rate_limit: record.rate_limit,
                 api_key_concurrent_limit: record.concurrent_limit,
+                api_key_per_ip_concurrency_limit: record.per_ip_concurrency_limit,
                 api_key_expires_at_unix_secs: record.expires_at_unix_secs,
                 api_key_allowed_providers: record.allowed_providers.clone(),
                 api_key_allowed_api_formats: record.allowed_api_formats.clone(),
@@ -685,6 +692,7 @@ impl AuthApiKeyWriteRepository for InMemoryAuthApiKeySnapshotRepository {
                     .as_ref()
                     .map(|value| serde_json::json!(value)),
             )?
+            .with_api_key_per_ip_concurrency_limit(record.per_ip_concurrency_limit)
         };
 
         let now_unix_secs = current_unix_secs() as i64;
@@ -717,6 +725,7 @@ impl AuthApiKeyWriteRepository for InMemoryAuthApiKeySnapshotRepository {
             record.total_cost_usd,
             true,
         )?
+        .with_per_ip_concurrency_limit(record.per_ip_concurrency_limit)
         .with_ip_rules(
             record
                 .ip_rules
@@ -775,6 +784,14 @@ impl AuthApiKeyWriteRepository for InMemoryAuthApiKeySnapshotRepository {
                 export.concurrent_limit = Some(concurrent_limit);
             }
         }
+        if let Some(per_ip_concurrency_limit) = record.per_ip_concurrency_limit {
+            if let Some(snapshot) = index.by_api_key_id.get_mut(&record.api_key_id) {
+                snapshot.api_key_per_ip_concurrency_limit = Some(per_ip_concurrency_limit);
+            }
+            if let Some(export) = index.export_by_api_key_id.get_mut(&record.api_key_id) {
+                export.per_ip_concurrency_limit = Some(per_ip_concurrency_limit);
+            }
+        }
         if let Some(ip_rules) = record.ip_rules {
             if let Some(snapshot) = index.by_api_key_id.get_mut(&record.api_key_id) {
                 snapshot.api_key_ip_rules = ip_rules.clone();
@@ -822,6 +839,14 @@ impl AuthApiKeyWriteRepository for InMemoryAuthApiKeySnapshotRepository {
             }
             if let Some(export) = index.export_by_api_key_id.get_mut(&record.api_key_id) {
                 export.concurrent_limit = record.concurrent_limit;
+            }
+        }
+        if record.per_ip_concurrency_limit_present {
+            if let Some(snapshot) = index.by_api_key_id.get_mut(&record.api_key_id) {
+                snapshot.api_key_per_ip_concurrency_limit = record.per_ip_concurrency_limit;
+            }
+            if let Some(export) = index.export_by_api_key_id.get_mut(&record.api_key_id) {
+                export.per_ip_concurrency_limit = record.per_ip_concurrency_limit;
             }
         }
         if let Some(allowed_providers) = record.allowed_providers {
@@ -1309,12 +1334,14 @@ mod tests {
                 name: None,
                 rate_limit: None,
                 concurrent_limit: Some(11),
+                per_ip_concurrency_limit: Some(5),
                 ip_rules: None,
             })
             .await
             .expect("update should succeed")
             .expect("record should exist");
         assert_eq!(updated.concurrent_limit, Some(11));
+        assert_eq!(updated.per_ip_concurrency_limit, Some(5));
 
         let snapshot = repository
             .find_api_key_snapshot(AuthApiKeyLookupKey::ApiKeyId("key-1"))
@@ -1322,6 +1349,7 @@ mod tests {
             .expect("find should succeed")
             .expect("snapshot should exist");
         assert_eq!(snapshot.api_key_concurrent_limit, Some(11));
+        assert_eq!(snapshot.api_key_per_ip_concurrency_limit, Some(5));
     }
 
     #[tokio::test]
@@ -1341,6 +1369,8 @@ mod tests {
                 rate_limit: None,
                 concurrent_limit_present: true,
                 concurrent_limit: Some(13),
+                per_ip_concurrency_limit_present: true,
+                per_ip_concurrency_limit: Some(7),
                 allowed_providers: None,
                 allowed_api_formats: None,
                 allowed_models: None,
@@ -1354,6 +1384,7 @@ mod tests {
             .expect("update should succeed")
             .expect("record should exist");
         assert_eq!(updated.concurrent_limit, Some(13));
+        assert_eq!(updated.per_ip_concurrency_limit, Some(7));
 
         let snapshot = repository
             .find_api_key_snapshot(AuthApiKeyLookupKey::ApiKeyId("key-standalone"))
@@ -1361,5 +1392,6 @@ mod tests {
             .expect("find should succeed")
             .expect("snapshot should exist");
         assert_eq!(snapshot.api_key_concurrent_limit, Some(13));
+        assert_eq!(snapshot.api_key_per_ip_concurrency_limit, Some(7));
     }
 }

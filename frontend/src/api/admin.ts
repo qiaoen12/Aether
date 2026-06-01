@@ -172,6 +172,7 @@ export interface UserApiKeyExport {
   ip_rules?: string[] | null
   rate_limit?: number | null  // legacy/null 兼容；1.3+ standalone null = 跟随系统默认
   concurrent_limit?: number | null
+  per_ip_concurrency_limit?: number | null
   force_capabilities?: Record<string, boolean>
   feature_settings?: Record<string, unknown> | null
   is_active: boolean
@@ -651,6 +652,7 @@ export interface AdminApiKey {
   total_cost_usd?: number
   rate_limit?: number | null  // null = 跟随系统默认，0 = 不限制
   concurrent_limit?: number | null  // null = 跟随系统默认，0 = 不限制
+  per_ip_concurrency_limit?: number | null  // null/0 = 不限制单 IP 并发
   allowed_providers?: string[] | null  // 允许的提供商列表
   allowed_api_formats?: string[] | null  // 允许的 API 格式列表
   allowed_models?: string[] | null  // 允许的模型列表
@@ -672,6 +674,7 @@ export interface CreateStandaloneApiKeyRequest {
   ip_rules?: string[] | null
   rate_limit?: number | null  // null = 跟随系统默认，0 = 不限制
   concurrent_limit?: number | null  // null = 跟随系统默认，0 = 不限制
+  per_ip_concurrency_limit?: number | null  // null/0 = 不限制单 IP 并发
   expires_at?: string | null  // RFC3339 时间，null = 永不过期
   initial_balance_usd: number | null  // 初始余额，null = 无限制
   unlimited_balance?: boolean | null  // 编辑时仅切换额度模式，不调整余额数值

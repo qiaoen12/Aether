@@ -179,6 +179,7 @@ CREATE TABLE IF NOT EXISTS public.api_keys (
     ip_rules jsonb,
     rate_limit integer DEFAULT 100,
     concurrent_limit integer,
+    per_ip_concurrency_limit integer,
     force_capabilities json,
     feature_settings jsonb,
     is_active boolean DEFAULT true NOT NULL,

@@ -50,6 +50,7 @@ pub(super) fn sample_auth_context() -> GatewayControlAuthContext {
         access_allowed: true,
         user_rate_limit: None,
         api_key_rate_limit: None,
+        api_key_per_ip_concurrency_limit: None,
         api_key_is_standalone: false,
         admin_bypass_limits: false,
         local_rejection: None,

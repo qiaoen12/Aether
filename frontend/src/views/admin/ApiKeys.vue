@@ -258,6 +258,22 @@
                         {{ formatConcurrentLimitInheritable(apiKey.concurrent_limit) }}
                       </span>
                     </div>
+                    <div class="flex items-center gap-1 text-muted-foreground">
+                      <span>单 IP:</span>
+                      <Badge
+                        v-if="isPerIpConcurrencyLimitUnlimited(apiKey.per_ip_concurrency_limit)"
+                        variant="secondary"
+                        class="h-5 px-1.5 py-0 text-[10px] font-medium"
+                      >
+                        {{ formatPerIpConcurrencyLimit(apiKey.per_ip_concurrency_limit) }}
+                      </Badge>
+                      <span
+                        v-else
+                        class="font-medium text-foreground"
+                      >
+                        {{ formatPerIpConcurrencyLimit(apiKey.per_ip_concurrency_limit) }}
+                      </span>
+                    </div>
                   </div>
                 </TableCell>
                 <TableCell class="py-4">
@@ -444,6 +460,12 @@
                     class="h-5 px-1.5 py-0 text-[10px] font-medium"
                   >
                     {{ formatConcurrentLimitInheritable(apiKey.concurrent_limit) }}
+                  </Badge>
+                  <Badge
+                    variant="secondary"
+                    class="h-5 px-1.5 py-0 text-[10px] font-medium"
+                  >
+                    单 IP {{ formatPerIpConcurrencyLimit(apiKey.per_ip_concurrency_limit) }}
                   </Badge>
                   <Badge
                     v-if="apiKey.auto_delete_on_expiry"
@@ -1203,10 +1225,12 @@ function editApiKey(apiKey: AdminApiKey) {
     expires_at: expiresAt,
     rate_limit: apiKey.rate_limit ?? undefined,
     concurrent_limit: apiKey.concurrent_limit ?? undefined,
+    per_ip_concurrency_limit: apiKey.per_ip_concurrency_limit ?? undefined,
     auto_delete_on_expiry: apiKey.auto_delete_on_expiry || false,
     allowed_providers: apiKey.allowed_providers == null ? null : [...apiKey.allowed_providers],
     allowed_api_formats: apiKey.allowed_api_formats == null ? null : [...apiKey.allowed_api_formats],
     allowed_models: apiKey.allowed_models == null ? null : [...apiKey.allowed_models],
+    ip_rules: apiKey.ip_rules == null ? null : [...apiKey.ip_rules],
     feature_settings: apiKey.feature_settings ?? null
   }
 
@@ -1257,6 +1281,15 @@ function isConcurrentLimitInherited(concurrentLimit?: number | null): boolean {
 
 function isConcurrentLimitUnlimited(concurrentLimit?: number | null): boolean {
   return concurrentLimit === 0
+}
+
+function formatPerIpConcurrencyLimit(limit?: number | null): string {
+  if (limit == null || limit === 0) return '不限并发'
+  return `${limit} 并发`
+}
+
+function isPerIpConcurrencyLimitUnlimited(limit?: number | null): boolean {
+  return limit == null || limit === 0
 }
 
 function formatWalletAmount(value: number | null, nullLabel = '无限制'): string {
@@ -1414,6 +1447,7 @@ async function handleKeyFormSubmit(data: StandaloneKeyFormData) {
         unlimited_balance: Boolean(data.unlimited_balance),
         rate_limit: data.rate_limit ?? null,  // undefined = 跟随系统默认，显式传 null
         concurrent_limit: data.concurrent_limit ?? null,
+        per_ip_concurrency_limit: data.per_ip_concurrency_limit ?? 0,
         expires_at: serializeExpiryDate(data.expires_at),
         auto_delete_on_expiry: data.auto_delete_on_expiry,
         // 空数组表示清除限制（允许全部），后端会将空数组存为 NULL
@@ -1446,6 +1480,7 @@ async function handleKeyFormSubmit(data: StandaloneKeyFormData) {
         initial_balance_usd: isUnlimited ? null : (data.initial_balance_usd as number),
         rate_limit: data.rate_limit ?? null,  // undefined = 跟随系统默认，显式传 null
         concurrent_limit: data.concurrent_limit ?? null,
+        per_ip_concurrency_limit: data.per_ip_concurrency_limit ?? 0,
         expires_at: serializeExpiryDate(data.expires_at),
         auto_delete_on_expiry: data.auto_delete_on_expiry,
         // 空数组表示不设置限制（允许全部），后端会将空数组存为 NULL

@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
     `ip_rules` JSON,
     `rate_limit` INT DEFAULT 100,
     `concurrent_limit` INT,
+    `per_ip_concurrency_limit` INT,
     `force_capabilities` JSON,
     `feature_settings` JSON,
     `is_active` TINYINT(1) NOT NULL DEFAULT 1,
@@ -217,4 +218,3 @@ CREATE TABLE IF NOT EXISTS user_sessions (
     KEY user_sessions_user_active_idx (`user_id`, `revoked_at`, `expires_at`),
     KEY user_sessions_user_device_idx (`user_id`, `client_device_id`)
 );
-
