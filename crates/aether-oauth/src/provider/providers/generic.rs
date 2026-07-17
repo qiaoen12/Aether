@@ -97,6 +97,25 @@ pub const GENERIC_PROVIDER_OAUTH_TEMPLATES: &[GenericProviderOAuthTemplate] = &[
         use_pkce: true,
         uses_json_payload: false,
     },
+    GenericProviderOAuthTemplate {
+        provider_type: "grok_oauth",
+        display_name: "Grok OAuth",
+        authorize_url: "https://auth.x.ai/oauth2/authorize",
+        token_url: "https://auth.x.ai/oauth2/token",
+        client_id: "b1a00492-073a-47ea-816f-4c329264a828",
+        client_secret: "",
+        scopes: &[
+            "openid",
+            "profile",
+            "email",
+            "offline_access",
+            "grok-cli:access",
+            "api:access",
+        ],
+        redirect_uri: "http://127.0.0.1:56121/callback",
+        use_pkce: true,
+        uses_json_payload: false,
+    },
 ];
 
 #[derive(Debug, Clone)]
@@ -470,6 +489,10 @@ fn enrich_generic_identity(
             }
         }
     }
+    if provider_type.trim().eq_ignore_ascii_case("grok_oauth") {
+        enrich_grok_oauth_identity(auth_config, token_payload);
+        return;
+    }
     if !matches!(
         provider_type.trim().to_ascii_lowercase().as_str(),
         "codex" | "chatgpt_web"
@@ -601,6 +624,34 @@ fn decode_jwt_claims(token: &str) -> Option<serde_json::Map<String, Value>> {
         .cloned()
 }
 
+fn enrich_grok_oauth_identity(
+    auth_config: &mut serde_json::Map<String, Value>,
+    token_payload: &Value,
+) {
+    if !auth_config.contains_key("headers") {
+        auth_config.insert(
+            "headers".to_string(),
+            json!({
+                "User-Agent": "aether-grok-oauth/1.0",
+                "X-Grok-Client-Version": "0.2.93"
+            }),
+        );
+    }
+    if let Some(access_token) = token_payload
+        .get("access_token")
+        .and_then(Value::as_str)
+        .or_else(|| token_payload.get("id_token").and_then(Value::as_str))
+    {
+        if let Some(claims) = decode_jwt_claims(access_token) {
+            for field in ["email", "sub", "team_id"] {
+                if let Some(value) = claims.get(field).cloned() {
+                    auth_config.entry(field.to_string()).or_insert(value);
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{enrich_generic_identity, template_for_provider_type, GenericProviderOAuthAdapter};
@@ -617,7 +668,67 @@ mod tests {
     fn resolves_generic_provider_templates() {
         assert!(template_for_provider_type("codex").is_some());
         assert!(template_for_provider_type("claude_code").is_some());
+        assert!(template_for_provider_type("grok_oauth").is_some());
         assert!(template_for_provider_type("kiro").is_none());
+    }
+
+    #[test]
+    fn grok_oauth_template_uses_xai_pkce_flow() {
+        let template =
+            template_for_provider_type("grok_oauth").expect("grok_oauth template should exist");
+        assert_eq!(template.provider_type, "grok_oauth");
+        assert_eq!(template.authorize_url, "https://auth.x.ai/oauth2/authorize");
+        assert_eq!(template.token_url, "https://auth.x.ai/oauth2/token");
+        assert!(template.use_pkce);
+        assert!(template.client_secret.is_empty());
+        assert!(template.scopes.contains(&"grok-cli:access"));
+    }
+
+    #[test]
+    fn grok_oauth_identity_injects_cli_headers_and_jwt_claims() {
+        let claims = json!({
+            "email": "user@x.ai",
+            "sub": "subject-123",
+            "team_id": "team-456"
+        });
+        let token = format!(
+            "header.{}.signature",
+            URL_SAFE_NO_PAD.encode(serde_json::to_vec(&claims).expect("claims should encode"))
+        );
+        let mut auth_config = serde_json::Map::new();
+
+        enrich_generic_identity(
+            "grok_oauth",
+            &mut auth_config,
+            &json!({ "access_token": token }),
+        );
+
+        let headers = auth_config
+            .get("headers")
+            .and_then(|value| value.as_object())
+            .expect("headers should be injected");
+        assert_eq!(
+            headers.get("User-Agent").and_then(|v| v.as_str()),
+            Some("aether-grok-oauth/1.0")
+        );
+        assert_eq!(
+            headers
+                .get("X-Grok-Client-Version")
+                .and_then(|v| v.as_str()),
+            Some("0.2.93")
+        );
+        assert_eq!(
+            auth_config.get("email").and_then(|v| v.as_str()),
+            Some("user@x.ai")
+        );
+        assert_eq!(
+            auth_config.get("sub").and_then(|v| v.as_str()),
+            Some("subject-123")
+        );
+        assert_eq!(
+            auth_config.get("team_id").and_then(|v| v.as_str()),
+            Some("team-456")
+        );
     }
 
     #[test]
