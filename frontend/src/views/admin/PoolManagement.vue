@@ -1565,6 +1565,7 @@ const showAccountQuotaColumn = computed(() => {
     || selectedProviderType.value === 'windsurf'
     || selectedProviderType.value === 'antigravity'
     || selectedProviderType.value === 'grok'
+    || selectedProviderType.value === 'grok_oauth'
     || selectedProviderType.value === 'chatgpt_web'
 })
 
@@ -1996,6 +1997,7 @@ const quotaRefreshSupported = computed(() => {
     || selectedProviderType.value === 'windsurf'
     || selectedProviderType.value === 'antigravity'
     || selectedProviderType.value === 'grok'
+    || selectedProviderType.value === 'grok_oauth'
     || selectedProviderType.value === 'chatgpt_web'
 })
 
@@ -3303,15 +3305,16 @@ function getQuotaLabelOrder(label: string): number {
   if (label === '日') return 5
   if (label === '5H') return 6
   if (label === '周') return 7
-  if (label === 'Spark5H') return 8
-  if (label === 'Spark周') return 9
-  if (label === 'Prompt') return 10
-  if (label === 'Flex') return 11
-  if (label === '剩余') return 12
-  if (label === '最低') return 13
-  if (label === '生图') return 14
-  if (label === '速率') return 15
-  if (label === '模型') return 16
+  if (label === '月') return 8
+  if (label === 'Spark5H') return 9
+  if (label === 'Spark周') return 10
+  if (label === 'Prompt') return 11
+  if (label === 'Flex') return 12
+  if (label === '剩余') return 13
+  if (label === '最低') return 14
+  if (label === '生图') return 15
+  if (label === '速率') return 16
+  if (label === '模型') return 17
   return 20
 }
 
@@ -3523,6 +3526,33 @@ function buildQuotaProgressItemsFromSnapshot(key: PoolKeyDetail): QuotaProgressI
       resetSeconds: normalizeRemainingSeconds(window?.reset_seconds ?? quotaResetSeconds ?? null),
       updatedAtSeconds: getQuotaSnapshotUpdatedAtSeconds(quota),
     }]
+  }
+
+  if (providerType === 'grok_oauth') {
+    const quotaResetAtSeconds = getQuotaSnapshotResetAtSeconds(quota)
+    const quotaResetSeconds = getQuotaSnapshotResetSeconds(quota)
+    return ([
+      ['周', 'weekly'],
+      ['月', 'monthly'],
+    ] as const)
+      .map(([label, code]): QuotaProgressItem | null => {
+        const window = getQuotaSnapshotWindow(quota, code)
+        const remainingPercent = getQuotaWindowRemainingPercent(window)
+        if (remainingPercent == null) return null
+        const rawValueText = code === 'monthly' ? getQuotaWindowValueText(window) : undefined
+        const detail = rawValueText
+          ? rawValueText.split('/').map(value => `$${value}`).join('/')
+          : undefined
+        return {
+          label,
+          remainingPercent,
+          detail,
+          resetAtSeconds: normalizeUnixSeconds(window?.reset_at ?? quotaResetAtSeconds ?? null),
+          resetSeconds: normalizeRemainingSeconds(window?.reset_seconds ?? quotaResetSeconds ?? null),
+          updatedAtSeconds: getQuotaSnapshotUpdatedAtSeconds(quota),
+        }
+      })
+      .filter((item): item is QuotaProgressItem => item != null)
   }
 
   if (providerType === 'grok') {
