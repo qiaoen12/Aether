@@ -64,9 +64,10 @@ pub(crate) async fn refresh_oauth_plan_auth_for_retry(
             body_excerpt,
             ..
         }) if matches!(refresh_status_code, 400 | 401 | 403) => {
-            if provider_type_retains_oauth_forbidden(transport.provider.provider_type.as_str())
-                && (status_code == 403 || refresh_status_code == 403)
-            {
+            if oauth_retry_failure_must_be_retained(
+                transport.provider.provider_type.as_str(),
+                refresh_status_code,
+            ) {
                 warn!(
                     event_name = "local_oauth_retry_grok_oauth_forbidden_retained",
                     log_type = "ops",
@@ -132,6 +133,10 @@ pub(crate) async fn refresh_oauth_plan_auth_for_retry(
     }
 }
 
+fn oauth_retry_failure_must_be_retained(provider_type: &str, refresh_status_code: u16) -> bool {
+    provider_type_retains_oauth_forbidden(provider_type) && refresh_status_code == 403
+}
+
 fn status_may_be_oauth_invalid(status_code: u16, response_text: Option<&str>) -> bool {
     if status_code == 401 {
         return true;
@@ -181,8 +186,8 @@ fn status_proves_access_token_invalid(status_code: u16, response_text: Option<&s
 #[cfg(test)]
 mod tests {
     use super::{
-        refresh_oauth_plan_auth_for_retry, status_may_be_oauth_invalid,
-        status_proves_access_token_invalid,
+        oauth_retry_failure_must_be_retained, refresh_oauth_plan_auth_for_retry,
+        status_may_be_oauth_invalid, status_proves_access_token_invalid,
     };
     use std::collections::BTreeMap;
     use std::sync::{Arc, Mutex};
@@ -234,6 +239,16 @@ mod tests {
             429,
             Some("token bucket")
         ));
+    }
+
+    #[test]
+    fn grok_oauth_refresh_status_takes_precedence_over_upstream_status() {
+        // A preceding upstream 403 must not promote terminal refresh 400/401 responses.
+        assert!(!oauth_retry_failure_must_be_retained("grok_oauth", 401));
+        assert!(!oauth_retry_failure_must_be_retained("grok_oauth", 400));
+        // Conversely, refresh 403 stays non-terminal even when the upstream response was 401.
+        assert!(oauth_retry_failure_must_be_retained("grok_oauth", 403));
+        assert!(!oauth_retry_failure_must_be_retained("codex", 403));
     }
 
     #[tokio::test]
