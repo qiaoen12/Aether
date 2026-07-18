@@ -163,9 +163,9 @@ fn quota_window_exhausted(bucket: &Map<String, Value>, prefix: &str) -> bool {
     }
 
     let reset_at = provider_pool_timestamp_unix_secs(bucket.get(&format!("{prefix}_reset_at")));
-    !provider_pool_current_unix_secs()
+    provider_pool_current_unix_secs()
         .zip(reset_at)
-        .is_some_and(|(now, reset_at)| now >= reset_at)
+        .is_none_or(|(now, reset_at)| now < reset_at)
 }
 
 fn quota_exhausted_from_bucket(bucket: &Map<String, Value>) -> bool {
