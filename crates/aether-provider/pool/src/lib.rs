@@ -272,7 +272,11 @@ mod tests {
         );
         assert_eq!(
             weekly.headers.get("user-agent").map(String::as_str),
-            Some("xai-grok-workspace/0.2.93")
+            Some("grok-pager/0.2.93 grok-shell/0.2.93 (macos; aarch64)")
+        );
+        assert_eq!(
+            monthly.headers.get("user-agent").map(String::as_str),
+            Some("grok-pager/0.2.93 grok-shell/0.2.93 (macos; aarch64)")
         );
         assert_eq!(weekly.provider_api_format, "grok_oauth:billing");
         assert!(!ProviderPoolService::with_builtin_adapters()

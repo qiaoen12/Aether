@@ -21,7 +21,12 @@ pub const GROK_OAUTH_BILLING_MONTHLY_PATH: &str = "/billing";
 
 const GROK_OAUTH_CLI_VERSION: &str = "0.2.93";
 const GROK_OAUTH_TOKEN_AUTH_VALUE: &str = "xai-grok-cli";
-const GROK_OAUTH_USER_AGENT: &str = "xai-grok-workspace/0.2.93";
+
+fn grok_oauth_billing_user_agent() -> String {
+    format!(
+        "grok-pager/{GROK_OAUTH_CLI_VERSION} grok-shell/{GROK_OAUTH_CLI_VERSION} (macos; aarch64)"
+    )
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct GrokOAuthProviderPoolAdapter;
@@ -128,11 +133,7 @@ pub fn build_grok_oauth_pool_billing_request(
             auth_config_header(auth_config, "x-grok-client-version")
                 .unwrap_or_else(|| GROK_OAUTH_CLI_VERSION.to_string()),
         ),
-        (
-            "user-agent".to_string(),
-            auth_config_header(auth_config, "user-agent")
-                .unwrap_or_else(|| GROK_OAUTH_USER_AGENT.to_string()),
-        ),
+        ("user-agent".to_string(), grok_oauth_billing_user_agent()),
     ]);
     headers.insert(
         authorization_name.to_ascii_lowercase(),

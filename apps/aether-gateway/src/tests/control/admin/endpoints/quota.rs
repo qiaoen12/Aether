@@ -2249,7 +2249,7 @@ async fn gateway_refreshes_grok_oauth_weekly_and_monthly_billing_quota_inner() {
         );
         assert_eq!(
             request.headers.get("user-agent").map(String::as_str),
-            Some("xai-grok-workspace/0.2.93")
+            Some("grok-pager/0.2.93 grok-shell/0.2.93 (macos; aarch64)")
         );
         assert_eq!(request.provider_api_format, "grok_oauth:billing");
     }

@@ -668,12 +668,12 @@ fn decode_jwt_claims(token: &str) -> Option<serde_json::Map<String, Value>> {
 
 fn enrich_grok_oauth_identity(auth_config: &mut Map<String, Value>, token_payload: &Value) {
     apply_grok_oauth_auth_config_defaults(auth_config);
-    if let Some(access_token) = token_payload
-        .get("access_token")
-        .and_then(Value::as_str)
-        .or_else(|| token_payload.get("id_token").and_then(Value::as_str))
-    {
-        if let Some(claims) = decode_jwt_claims(access_token) {
+    for token_field in ["id_token", "access_token"] {
+        if let Some(claims) = token_payload
+            .get(token_field)
+            .and_then(Value::as_str)
+            .and_then(decode_jwt_claims)
+        {
             for field in ["email", "sub", "team_id"] {
                 if let Some(value) = claims.get(field).cloned() {
                     auth_config.entry(field.to_string()).or_insert(value);
@@ -731,7 +731,7 @@ mod tests {
     use crate::provider::{ProviderOAuthAccount, ProviderOAuthTransportContext};
     use async_trait::async_trait;
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-    use serde_json::json;
+    use serde_json::{json, Value};
     use std::collections::BTreeMap;
     use std::sync::{Arc, Mutex};
 
@@ -902,6 +902,69 @@ mod tests {
         assert_eq!(
             auth_config.get("team_id").and_then(|v| v.as_str()),
             Some("team-456")
+        );
+    }
+
+    #[test]
+    fn grok_oauth_identity_uses_id_token_when_access_token_is_opaque() {
+        let claims = json!({
+            "email": "user@x.ai",
+            "sub": "subject-123",
+            "team_id": "team-456"
+        });
+        let id_token = format!(
+            "header.{}.signature",
+            URL_SAFE_NO_PAD.encode(serde_json::to_vec(&claims).expect("claims should encode"))
+        );
+        let mut auth_config = serde_json::Map::new();
+
+        enrich_generic_identity(
+            "grok_oauth",
+            &mut auth_config,
+            &json!({
+                "access_token": "opaque-access-token",
+                "id_token": id_token
+            }),
+        );
+
+        assert_eq!(auth_config.get("email"), Some(&json!("user@x.ai")));
+        assert_eq!(auth_config.get("sub"), Some(&json!("subject-123")));
+        assert_eq!(auth_config.get("team_id"), Some(&json!("team-456")));
+    }
+
+    #[test]
+    fn grok_oauth_identity_prefers_id_token_and_fills_missing_access_token_claims() {
+        let id_claims = json!({
+            "email": "id-token@x.ai",
+            "sub": "id-token-subject"
+        });
+        let access_claims = json!({
+            "email": "access-token@x.ai",
+            "sub": "access-token-subject",
+            "team_id": "access-token-team"
+        });
+        let jwt = |claims: &Value| {
+            format!(
+                "header.{}.signature",
+                URL_SAFE_NO_PAD.encode(serde_json::to_vec(claims).expect("claims should encode"))
+            )
+        };
+        let mut auth_config = serde_json::Map::new();
+
+        enrich_generic_identity(
+            "grok_oauth",
+            &mut auth_config,
+            &json!({
+                "id_token": jwt(&id_claims),
+                "access_token": jwt(&access_claims)
+            }),
+        );
+
+        assert_eq!(auth_config.get("email"), Some(&json!("id-token@x.ai")));
+        assert_eq!(auth_config.get("sub"), Some(&json!("id-token-subject")));
+        assert_eq!(
+            auth_config.get("team_id"),
+            Some(&json!("access-token-team"))
         );
     }
 

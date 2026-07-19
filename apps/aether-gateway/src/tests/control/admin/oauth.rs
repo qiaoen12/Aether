@@ -263,7 +263,12 @@ fn assert_single_provider_oauth_refresh_token_plan<'a>(
     token_plans[0]
 }
 
-fn assert_persisted_grok_oauth_cli_auth_config(encrypted_auth_config: Option<&str>) {
+fn assert_persisted_grok_oauth_auth_config(
+    encrypted_auth_config: Option<&str>,
+    expected_email: &str,
+    expected_sub: &str,
+    expected_team_id: &str,
+) {
     let decrypted_auth_config = decrypt_python_fernet_ciphertext(
         DEVELOPMENT_ENCRYPTION_KEY,
         encrypted_auth_config.expect("auth config should be stored"),
@@ -273,6 +278,9 @@ fn assert_persisted_grok_oauth_cli_auth_config(encrypted_auth_config: Option<&st
         serde_json::from_str(&decrypted_auth_config).expect("auth config json should parse");
 
     assert_eq!(auth_config["provider_type"], "grok_oauth");
+    assert_eq!(auth_config["email"], expected_email);
+    assert_eq!(auth_config["sub"], expected_sub);
+    assert_eq!(auth_config["team_id"], expected_team_id);
     assert_eq!(auth_config["headers"]["X-XAI-Token-Auth"], "xai-grok-cli");
     assert_eq!(auth_config["headers"]["x-grok-client-version"], "0.2.93");
     assert_eq!(
@@ -281,18 +289,36 @@ fn assert_persisted_grok_oauth_cli_auth_config(encrypted_auth_config: Option<&st
     );
 }
 
+fn sample_grok_oauth_id_token(email: &str, sub: &str, team_id: &str) -> String {
+    use base64::Engine as _;
+
+    let header =
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(r#"{"alg":"none","typ":"JWT"}"#);
+    let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
+        json!({
+            "email": email,
+            "sub": sub,
+            "team_id": team_id,
+        })
+        .to_string(),
+    );
+    format!("{header}.{payload}.sig")
+}
+
 fn grok_oauth_token_payload(
     access_token: &str,
     refresh_token: &str,
     email: &str,
+    sub: &str,
+    team_id: &str,
 ) -> serde_json::Value {
     json!({
         "access_token": access_token,
         "refresh_token": refresh_token,
+        "id_token": sample_grok_oauth_id_token(email, sub, team_id),
         "token_type": "Bearer",
         "expires_in": 1800,
         "scope": "openid profile email offline_access grok-cli:access",
-        "email": email,
     })
 }
 
@@ -9284,6 +9310,8 @@ async fn gateway_persists_grok_oauth_cli_headers_after_provider_callback_impl() 
                 "grok-oauth-callback-access-token",
                 "grok-oauth-callback-refresh-token",
                 "callback@grok.example",
+                "grok-callback-subject",
+                "grok-callback-team",
             ))
         }),
     );
@@ -9328,7 +9356,12 @@ async fn gateway_persists_grok_oauth_cli_headers_after_provider_callback_impl() 
         .into_iter()
         .next()
         .expect("persisted key should exist");
-    assert_persisted_grok_oauth_cli_auth_config(persisted.encrypted_auth_config.as_deref());
+    assert_persisted_grok_oauth_auth_config(
+        persisted.encrypted_auth_config.as_deref(),
+        "callback@grok.example",
+        "grok-callback-subject",
+        "grok-callback-team",
+    );
 
     gateway_handle.abort();
     token_handle.abort();
@@ -9350,6 +9383,8 @@ async fn gateway_persists_grok_oauth_cli_headers_after_refresh_token_import_impl
                 "grok-oauth-import-access-token",
                 "grok-oauth-import-refresh-token",
                 "import@grok.example",
+                "grok-import-subject",
+                "grok-import-team",
             ))
         }),
     );
@@ -9384,7 +9419,12 @@ async fn gateway_persists_grok_oauth_cli_headers_after_refresh_token_import_impl
         .into_iter()
         .next()
         .expect("persisted key should exist");
-    assert_persisted_grok_oauth_cli_auth_config(persisted.encrypted_auth_config.as_deref());
+    assert_persisted_grok_oauth_auth_config(
+        persisted.encrypted_auth_config.as_deref(),
+        "import@grok.example",
+        "grok-import-subject",
+        "grok-import-team",
+    );
 
     gateway_handle.abort();
     token_handle.abort();
@@ -9406,6 +9446,8 @@ async fn gateway_persists_grok_oauth_cli_headers_after_batch_refresh_token_impor
                 "grok-oauth-batch-access-token",
                 "grok-oauth-batch-refresh-token",
                 "batch@grok.example",
+                "grok-batch-subject",
+                "grok-batch-team",
             ))
         }),
     );
@@ -9442,7 +9484,12 @@ async fn gateway_persists_grok_oauth_cli_headers_after_batch_refresh_token_impor
         .into_iter()
         .next()
         .expect("persisted key should exist");
-    assert_persisted_grok_oauth_cli_auth_config(persisted.encrypted_auth_config.as_deref());
+    assert_persisted_grok_oauth_auth_config(
+        persisted.encrypted_auth_config.as_deref(),
+        "batch@grok.example",
+        "grok-batch-subject",
+        "grok-batch-team",
+    );
 
     gateway_handle.abort();
     token_handle.abort();
