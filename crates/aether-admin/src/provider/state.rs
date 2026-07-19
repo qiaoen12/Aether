@@ -1,3 +1,4 @@
+use aether_oauth::provider::providers::apply_grok_oauth_auth_config_defaults;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
@@ -262,6 +263,19 @@ pub fn enrich_admin_provider_oauth_auth_config(
         ],
     );
 
+    if provider_type.trim().eq_ignore_ascii_case("grok_oauth") {
+        apply_grok_oauth_auth_config_defaults(auth_config);
+        for token_field in ["id_token", "idToken", "access_token", "accessToken"] {
+            let Some(token) = json_non_empty_string(token_payload.get(token_field)) else {
+                continue;
+            };
+            let Some(claims) = decode_jwt_claims(&token) else {
+                continue;
+            };
+            merge_missing_auth_config_fields(auth_config, &claims, &["email", "sub", "team_id"]);
+        }
+    }
+
     if !provider_type_uses_openai_chatgpt_identity(provider_type) {
         return;
     }
@@ -459,5 +473,47 @@ mod tests {
         assert_eq!(auth_config.get("plan_type"), Some(&json!("plus")));
         assert_eq!(auth_config.get("user_id"), Some(&json!("user-image")));
         assert_eq!(auth_config.get("is_fedramp"), Some(&json!(true)));
+    }
+
+    #[test]
+    fn grok_oauth_enrichment_persists_jwt_identity_and_cli_defaults() {
+        let id_token = sample_unsigned_jwt(json!({
+            "email": "id-token@grok.example",
+            "sub": "grok-subject",
+        }));
+        let access_token = sample_unsigned_jwt(json!({
+            "email": "access-token@grok.example",
+            "sub": "ignored-access-token-subject",
+            "team_id": "grok-team",
+        }));
+        let mut auth_config = serde_json::Map::new();
+
+        enrich_admin_provider_oauth_auth_config(
+            "grok_oauth",
+            &mut auth_config,
+            &json!({
+                "id_token": id_token,
+                "access_token": access_token,
+            }),
+        );
+
+        assert_eq!(
+            auth_config.get("email"),
+            Some(&json!("id-token@grok.example"))
+        );
+        assert_eq!(auth_config.get("sub"), Some(&json!("grok-subject")));
+        assert_eq!(auth_config.get("team_id"), Some(&json!("grok-team")));
+        assert_eq!(
+            auth_config["headers"]["X-XAI-Token-Auth"],
+            json!("xai-grok-cli")
+        );
+        assert_eq!(
+            auth_config["headers"]["x-grok-client-version"],
+            json!("0.2.93")
+        );
+        assert_eq!(
+            auth_config["headers"]["User-Agent"],
+            json!("xai-grok-workspace/0.2.93")
+        );
     }
 }

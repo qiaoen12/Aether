@@ -448,20 +448,12 @@ const GROK_OAUTH_FIXED_PROVIDER_TEMPLATE: FixedProviderTemplate = FixedProviderT
     provider_type: "grok_oauth",
     version: 1,
     base_url: "https://cli-chat-proxy.grok.com/v1",
-    endpoints: &[
-        FixedProviderEndpointTemplate {
-            item_key: "openai:responses",
-            api_format: "openai:responses",
-            custom_path: None,
-            config_defaults: FORCE_STREAM_ENDPOINT_CONFIG_DEFAULTS,
-        },
-        FixedProviderEndpointTemplate {
-            item_key: "openai:chat",
-            api_format: "openai:chat",
-            custom_path: None,
-            config_defaults: EMPTY_ENDPOINT_CONFIG_DEFAULTS,
-        },
-    ],
+    endpoints: &[FixedProviderEndpointTemplate {
+        item_key: "openai:responses",
+        api_format: "openai:responses",
+        custom_path: None,
+        config_defaults: FORCE_STREAM_ENDPOINT_CONFIG_DEFAULTS,
+    }],
     runtime_policy: GROK_OAUTH_RUNTIME_POLICY,
 };
 
@@ -480,6 +472,10 @@ const WINDSURF_FIXED_PROVIDER_TEMPLATE: FixedProviderTemplate = FixedProviderTem
 
 pub fn provider_type_is_fixed(provider_type: &str) -> bool {
     provider_runtime_policy(provider_type).fixed_provider
+}
+
+pub fn provider_type_retains_oauth_forbidden(provider_type: &str) -> bool {
+    provider_type.trim().eq_ignore_ascii_case("grok_oauth")
 }
 
 pub fn fixed_provider_key_inherits_api_formats(
@@ -690,7 +686,7 @@ mod tests {
         fixed_provider_endpoint_template_by_api_format, fixed_provider_key_inherits_api_formats,
         fixed_provider_template, provider_runtime_policy, provider_type_admin_oauth_template,
         provider_type_allows_auth_channel_mismatch_by_default, provider_type_oauth_is_bearer_like,
-        provider_type_supports_local_embedding_transport,
+        provider_type_retains_oauth_forbidden, provider_type_supports_local_embedding_transport,
         provider_type_supports_local_same_format_transport, FixedProviderEndpointConfigValue,
         ADMIN_PROVIDER_OAUTH_TEMPLATE_TYPES,
     };
@@ -792,13 +788,21 @@ mod tests {
                 .iter()
                 .map(|item| item.api_format)
                 .collect::<Vec<_>>(),
-            vec!["openai:responses", "openai:chat"]
+            vec!["openai:responses"]
         );
         assert!(template.runtime_policy.fixed_provider);
         assert!(template.runtime_policy.oauth_is_bearer_like);
         assert!(template.runtime_policy.enable_format_conversion_by_default);
         assert!(!template.runtime_policy.supports_model_fetch);
         assert!(!template.runtime_policy.supports_local_openai_chat_transport);
+    }
+
+    #[test]
+    fn grok_oauth_forbidden_is_a_non_terminal_oauth_status() {
+        assert!(provider_type_retains_oauth_forbidden("grok_oauth"));
+        assert!(provider_type_retains_oauth_forbidden("GROK_OAUTH"));
+        assert!(!provider_type_retains_oauth_forbidden("grok"));
+        assert!(!provider_type_retains_oauth_forbidden("codex"));
     }
 
     #[test]
